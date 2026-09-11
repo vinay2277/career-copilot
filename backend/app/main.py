@@ -110,12 +110,13 @@ def health() -> dict[str, object]:
     `ai_available` lets the UI warn up front instead of after the user has
     pasted a job description and clicked Extract.
     """
-    from app.agents.client import NO_CREDENTIALS, credentials_available
+    from app.agents.client import credentials_available, no_credentials
 
     available = credentials_available()
     return {
         "status": "ok",
+        "provider": settings.llm_provider,
         "model": settings.llm_model,
         "ai_available": available,
-        "ai_note": None if available else NO_CREDENTIALS,
+        "ai_note": None if available else no_credentials(),
     }

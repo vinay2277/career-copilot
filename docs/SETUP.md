@@ -8,11 +8,43 @@ Verified on Windows 11, Python 3.13.5, Node 22.14.
 |---|---|
 | Python 3.11+ | Backend |
 | Node 18+ | Frontend |
-| An Anthropic API key *or* `ant auth login` | The three agents |
+| An OpenAI **or** Anthropic API key | The agents |
 | [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) | Screenshot ingestion only |
 
 Everything except the agents and OCR works without any credentials — scoring,
 the board, skill ROI, what-if, and analytics are pure computation.
+
+## Choosing a provider
+
+Both are supported. `LLM_PROVIDER` in `.env` picks one:
+
+```ini
+# OpenAI (default)
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o          # must support structured outputs
+OPENAI_REASONING_EFFORT=     # reasoning models only; blank for gpt-4o
+
+# Anthropic
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...  # or leave blank and run `ant auth login`
+ANTHROPIC_MODEL=claude-opus-5
+```
+
+`GET /health` reports which provider is active and whether its credentials
+resolve. The UI reads that and warns on the pages that need the model, rather
+than failing after you've filled in a form.
+
+All seven agents call one function — `structured_call` in
+`app/agents/client.py` — so the provider seam is that single file. Two
+differences it absorbs:
+
+- **Effort.** The agents tune Anthropic's `output_config.effort` per task.
+  OpenAI has no equivalent on general models; reasoning models take
+  `reasoning_effort`, which is opt-in so it is never sent to a model that
+  would reject it.
+- **Prompt caching.** Anthropic needs an explicit `cache_control` breakpoint;
+  OpenAI caches long prefixes automatically, so that argument is a no-op there.
 
 ## Backend
 
@@ -24,8 +56,9 @@ pip install -r requirements.txt
 Copy-Item .env.example .env      # macOS/Linux: cp .env.example .env
 ```
 
-Put your key in `.env` as `ANTHROPIC_API_KEY=...`, or leave it blank and run
-`ant auth login` — the SDK resolves credentials itself either way.
+Put your key in `.env` — `OPENAI_API_KEY=...` by default, or set
+`LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY=...`. See *Choosing a
+provider* above.
 
 Create the schema and start the server:
 

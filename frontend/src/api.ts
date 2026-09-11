@@ -78,8 +78,9 @@ const upload = <T,>(path: string, file: File) => {
 
 export interface Health {
   status: string;
+  provider: "openai" | "anthropic";
   model: string;
-  /** False when the backend has no Anthropic credentials. */
+  /** False when the backend has no credentials for the active provider. */
   ai_available: boolean;
   ai_note: string | null;
 }

@@ -17,7 +17,10 @@ alembic==1.14.0
 # psycopg[binary]==3.2.3
 
 # --- LLM ---
-# Brings in httpx2, which parsers.py also uses for URL fetching.
+# Both providers are supported; LLM_PROVIDER picks one at runtime. Installing
+# both keeps switching a one-line .env change.
+openai==3.13.0
+# Also brings in httpx2, which parsers.py uses for URL fetching.
 anthropic==1.5.0
 
 # --- Document ingestion ---

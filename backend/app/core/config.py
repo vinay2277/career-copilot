@@ -1,6 +1,7 @@
 """Application settings, loaded from the environment."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -11,13 +12,29 @@ class Settings(BaseSettings):
     )
 
     # --- LLM ---
+    # Which provider the agents talk to: "openai" or "anthropic". Every agent
+    # goes through one function, so this is the only switch needed.
+    llm_provider: Literal["openai", "anthropic"] = "openai"
+
+    # --- OpenAI ---
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
+    # Only reasoning models (o-series and later) accept a reasoning effort.
+    # Left unset so it is never sent to a model that would reject it.
+    openai_reasoning_effort: str = ""
+
+    # --- Anthropic ---
     # Left empty when the process authenticates via an `ant auth login` profile;
     # the Anthropic SDK resolves credentials itself in that case.
     anthropic_api_key: str = ""
+    anthropic_model: str = "claude-opus-5"
 
-    # Every agent runs on the same model. Effort is tuned per agent instead,
-    # so one cache namespace covers the whole app.
-    llm_model: str = "claude-opus-5"
+    @property
+    def llm_model(self) -> str:
+        """The model the active provider will use."""
+        if self.llm_provider == "anthropic":
+            return self.anthropic_model
+        return self.openai_model
 
     # --- Database ---
     database_url: str = "sqlite:///./career_copilot.db"

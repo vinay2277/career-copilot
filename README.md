@@ -27,6 +27,8 @@ FastAPI backend (:8000)
 
 **Design rule:** all scoring and analytics are deterministic and reproducible. LLMs are used only for extraction, validation, and narrative recommendations — never for computing a number.
 
+**Provider:** OpenAI or Anthropic, switched with `LLM_PROVIDER` in `.env`. All seven agents call one function, so that seam is a single file. Everything that doesn't call a model — scoring, the board, skill ROI, what-if, analytics — works with no credentials at all.
+
 ## Branches
 
 | Branch | Purpose |
