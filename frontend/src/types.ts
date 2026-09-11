@@ -66,6 +66,10 @@ export interface ExtractionPreview {
   company_size: string | null;
   description: string | null;
   requirements: Requirement[];
+  /** Screening criteria, held apart from requirements so they never score. */
+  education?: string | null;
+  certifications?: string[];
+  total_years_experience?: number | null;
   source_kind: SourceKind;
   source_url: string | null;
   raw_text: string;
@@ -89,6 +93,10 @@ export interface Job {
   industry: string | null;
   company_size: string | null;
   description: string | null;
+  /** Screening criteria, held apart from requirements so they never score. */
+  education: string | null;
+  certifications: string[];
+  total_years_experience: number | null;
   source_kind: SourceKind;
   source_url: string | null;
   extraction_confidence: number;

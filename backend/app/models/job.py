@@ -42,6 +42,16 @@ class JobPost(Base):
     company_size: Mapped[str | None] = mapped_column(String(60), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # --- Screening criteria, deliberately not requirements ---
+    # A degree or a clearance is not a skill: it can't be learned this quarter
+    # and it doesn't belong in a gap list or a learning roadmap. Stored so the
+    # UI can show it, excluded from everything the scorer touches.
+    education: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    certifications: Mapped[list[str]] = mapped_column(JSON, default=list)
+    total_years_experience: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+
     # --- Provenance ---
     source_kind: Mapped[SourceKind] = mapped_column(EnumStr(SourceKind))
     source_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)

@@ -93,6 +93,55 @@ def _drop_rejected(
     return [r for i, r in enumerate(requirements) if i not in bad]
 
 
+#: Substrings that mark a "requirement" as a screening criterion rather than a
+#: skill. The extraction prompt already routes these to their own fields, but a
+#: prompt is not a guarantee and one leaking through corrupts the score, the gap
+#: list, and the learning roadmap at once — so it is enforced in code too.
+_NOT_A_SKILL = (
+    "degree",
+    "bachelor",
+    "master",
+    "phd",
+    "doctorate",
+    "diploma",
+    "certification",
+    "certified",
+    "clearance",
+    "years of experience",
+    "work authorization",
+    "work authorisation",
+    "visa",
+    "team player",
+    "self-starter",
+    "self starter",
+    "communication skills",
+    "communicator",
+    "attention to detail",
+    "fast-paced",
+)
+
+
+def _drop_non_skills(
+    requirements: list[ExtractedRequirement],
+) -> list[ExtractedRequirement]:
+    """Remove entries that aren't learnable skills.
+
+    Matched on the canonical name so spelling and punctuation variants
+    ("Bachelor's Degree", "bachelors degree") are caught the same way.
+    """
+    kept, dropped = [], []
+    for r in requirements:
+        name = canonicalize(r.name)
+        if any(marker in name for marker in _NOT_A_SKILL):
+            dropped.append(r.name)
+        else:
+            kept.append(r)
+
+    if dropped:
+        logger.info("dropped %d non-skill requirements: %s", len(dropped), dropped)
+    return kept
+
+
 def _dedupe(requirements: list[ExtractedRequirement]) -> list[ExtractedRequirement]:
     """Collapse requirements that canonicalize to the same skill.
 
@@ -146,7 +195,7 @@ def ingest(
     report = validate_extraction(raw_text, extracted)
 
     kept = _drop_rejected(extracted.requirements, report.rejected_requirement_indices)
-    extracted.requirements = _dedupe(kept)
+    extracted.requirements = _dedupe(_drop_non_skills(kept))
 
     logger.info(
         "ingested %s job '%s' confidence=%.2f requirements=%d unverified=%s",

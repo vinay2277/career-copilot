@@ -45,6 +45,9 @@ def _to_preview(result: ValidatedJob) -> ExtractionPreview:
         industry=e.industry,
         company_size=e.company_size,
         description=e.description,
+        education=e.education,
+        certifications=e.certifications,
+        total_years_experience=e.total_years_experience,
         requirements=[
             {
                 "name": r.name,
@@ -154,6 +157,9 @@ def confirm_extraction(
         industry=preview.industry,
         company_size=preview.company_size,
         description=preview.description,
+        education=preview.education,
+        certifications=preview.certifications,
+        total_years_experience=preview.total_years_experience,
         source_kind=preview.source_kind,
         source_url=preview.source_url,
         raw_text=preview.raw_text,

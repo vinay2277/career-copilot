@@ -144,6 +144,12 @@ class ExtractionPreview(BaseModel):
     description: str | None
     requirements: list[RequirementOut]
 
+    #: Screening criteria, kept out of `requirements` so they never reach the
+    #: scorer, the gap list, or a learning roadmap.
+    education: str | None = None
+    certifications: list[str] = Field(default_factory=list)
+    total_years_experience: float | None = None
+
     source_kind: SourceKind
     source_url: str | None
     raw_text: str
@@ -174,6 +180,9 @@ class JobOut(BaseModel):
     industry: str | None
     company_size: str | None
     description: str | None
+    education: str | None
+    certifications: list[str]
+    total_years_experience: float | None
     source_kind: SourceKind
     source_url: str | None
     extraction_confidence: float

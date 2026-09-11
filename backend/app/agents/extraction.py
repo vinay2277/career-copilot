@@ -32,6 +32,22 @@ Rules, in priority order:
    min_years 5.0 — not the whole phrase.
 5. Split compound requirements. "Python, Go, or Rust" is three requirements, \
    each `preferred` if the posting offers them as alternatives.
+5a. **`requirements` holds skills, tools and technologies only.** These are \
+   things a person can learn and a resume can demonstrate. Do NOT put any of \
+   the following in `requirements`:
+   - Degrees and education ("Bachelor's in Computer Science") -> `education`
+   - Certifications and clearances ("AWS Certified", "security clearance") \
+     -> `certifications`
+   - A total years-of-experience figure not attached to a named skill \
+     ("7+ years in software engineering") -> `total_years_experience`
+   - Work authorisation, location, or travel expectations -> ignore; they are \
+     already captured by the location and remote fields
+   - Soft qualities with nothing to point at ("team player", "self-starter", \
+     "strong communicator") -> ignore entirely
+   A degree is not a skill: it cannot be learned this quarter, it does not \
+   belong in a skills-gap list, and treating it as one distorts the match.
+   Domain knowledge that is genuinely learnable ("distributed systems", \
+   "payments", "fintech") does belong in `requirements`.
 6. Extract salary as integers in the posting's own currency, annualized. An \
    hourly or monthly rate should be converted and the currency recorded; if the \
    period is ambiguous, leave both bounds null.
@@ -72,6 +88,20 @@ class ExtractedJob(BaseModel):
         default=None, description="Two-sentence neutral summary of the role."
     )
     requirements: list[ExtractedRequirement] = Field(default_factory=list)
+
+    # Captured but deliberately kept out of `requirements`: these are screening
+    # criteria, not skills, and scoring them as gaps would put "get a degree"
+    # in a learning roadmap.
+    education: str | None = Field(
+        default=None, description="Degree requirement as stated, or null."
+    )
+    certifications: list[str] = Field(
+        default_factory=list, description="Certifications or clearances required."
+    )
+    total_years_experience: float | None = Field(
+        default=None,
+        description="Overall years demanded, when stated without a named skill.",
+    )
 
 
 def extract_job(raw_text: str) -> ExtractedJob:

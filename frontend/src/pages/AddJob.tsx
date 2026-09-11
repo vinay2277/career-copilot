@@ -250,6 +250,28 @@ export default function AddJob() {
             {preview.remote === false && " · on-site"}
           </p>
 
+          {(preview.education ||
+            preview.certifications?.length ||
+            preview.total_years_experience) && (
+            <>
+              <h3>Screening criteria (not scored)</h3>
+              <p className="muted small">
+                Held apart from requirements on purpose — a degree isn't a skill,
+                and scoring it as a gap would put "get a degree" in a learning
+                roadmap.
+              </p>
+              <ul className="clean small">
+                {preview.education && <li>Education: {preview.education}</li>}
+                {preview.certifications?.length ? (
+                  <li>Certifications: {preview.certifications.join(", ")}</li>
+                ) : null}
+                {preview.total_years_experience ? (
+                  <li>Total experience: {preview.total_years_experience} years</li>
+                ) : null}
+              </ul>
+            </>
+          )}
+
           <h3>Requirements ({preview.requirements.length})</h3>
           <p className="muted small">
             Each one had to be quoted from the posting to survive the audit. Remove

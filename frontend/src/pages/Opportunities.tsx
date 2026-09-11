@@ -313,6 +313,34 @@ function JobDetail({ jobId }: { jobId: number }) {
             {tailored && <pre style={{ marginTop: "0.7rem" }}>{tailored}</pre>}
           </Card>
 
+          {(job.education ||
+            job.certifications?.length ||
+            job.total_years_experience) && (
+            <Card title="Screening criteria">
+              <p className="muted small">
+                Not scored. A degree or a clearance isn't a skill — it can't go
+                in a gap list or a learning roadmap, so it's kept out of the
+                alignment maths and shown here instead.
+              </p>
+              {job.education && (
+                <p className="small">
+                  <strong>Education:</strong> {job.education}
+                </p>
+              )}
+              {job.certifications?.length ? (
+                <p className="small">
+                  <strong>Certifications:</strong> {job.certifications.join(", ")}
+                </p>
+              ) : null}
+              {job.total_years_experience ? (
+                <p className="small">
+                  <strong>Total experience wanted:</strong>{" "}
+                  {job.total_years_experience} years
+                </p>
+              ) : null}
+            </Card>
+          )}
+
           <Card title="Provenance">
             <p className="small">
               Source: {job.source_kind}

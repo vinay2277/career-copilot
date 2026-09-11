@@ -9,11 +9,10 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.core.config import settings
-
 # Importing the models package populates Base.metadata, which is what
 # autogenerate diffs against. Without it every migration comes out empty.
 from app import models  # noqa: F401
+from app.core.config import settings
 from app.db.session import Base
 
 config = context.config
@@ -37,7 +36,8 @@ def render_item(type_: str, obj: object, autogen_context) -> str | bool:
     from app.db.types import EnumStr
 
     if type_ == "type" and isinstance(obj, EnumStr):
-        autogen_context.imports.add("import sqlalchemy as sa")
+        # No need to register an `sa` import: script.py.mako already declares
+        # it, and adding it here emits a duplicate import in every migration.
         return f"sa.String(length={obj.impl.length})"
     return False
 
