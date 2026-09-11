@@ -1,0 +1,20 @@
+# Normalize to LF in the repository; Git checks out native line endings.
+# Without this, a Windows and a macOS clone produce whole-file diffs on
+# everything they touch.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF to run.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Never touch binaries.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.db binary
