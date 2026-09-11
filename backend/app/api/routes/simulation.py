@@ -71,6 +71,7 @@ def what_if(
         scenario=Scenario(
             add_skills=payload.add_skills,
             add_at=payload.add_at,
+            add_years=payload.add_years,
             remove_skills=payload.remove_skills,
             min_salary=payload.min_salary,
             remote_ok=payload.remote_ok,

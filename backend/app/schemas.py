@@ -252,6 +252,15 @@ class SkillROIOut(BaseModel):
 class ScenarioIn(BaseModel):
     add_skills: list[str] = Field(default_factory=list)
     add_at: Proficiency = Proficiency.WORKING
+    add_years: float | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Experience to credit added skills with. Omit to use whatever the "
+            "tracked jobs actually ask for, which is what makes the result "
+            "register against '3+ years of X' requirements."
+        ),
+    )
     remove_skills: list[str] = Field(default_factory=list)
     min_salary: int | None = None
     remote_ok: bool | None = None

@@ -36,9 +36,22 @@ python -m uvicorn app.main:app --reload --port 8000
 
 `http://localhost:8000/docs` is the interactive API reference.
 
-> The app also calls `create_all` on startup, so it runs without a migration.
-> That is a dev convenience only: `create_all` cannot alter an existing table,
-> so any schema change after the first run needs a real migration.
+> On a completely empty database the app provisions the schema itself at
+> startup and stamps the Alembic head, so a fresh clone runs without the
+> migration step. Once tables exist it leaves them strictly alone — migrations
+> are the only thing that may alter an existing schema.
+
+### Demo data
+
+The app opens empty. To populate a profile and a six-job board:
+
+```powershell
+python scripts/seed_demo.py
+```
+
+No credentials needed — it posts pre-validated payloads to
+`/api/extract/confirm`, so the ingestion agents stay out of the path. To start
+over, stop the server and delete `career_copilot.db`.
 
 ## Frontend
 

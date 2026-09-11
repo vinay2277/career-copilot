@@ -13,6 +13,8 @@ from app.services.analytics.alignment import (
 from app.services.analytics.skill_roi import (
     UNLOCK_THRESHOLD,
     ScoredJob,
+    _profile_with,
+    demanded_years,
     gap_candidates,
     rank_skills,
 )
@@ -202,3 +204,98 @@ def test_simulating_an_empty_board_is_safe():
     result = simulate([], [], PREFS, Scenario(add_skills=["python"]))
     assert result.deltas == []
     assert result.mean_change == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# Regression: the years bar
+#
+# The counterfactual used to add a skill at working proficiency with zero
+# years. Against a requirement phrased "3+ years of X" that stayed at partial
+# coverage, so learning the skill measured as exactly no gain — and since the
+# most in-demand skills are the ones that state a year count, the ranking
+# promoted obscure skills over important ones.
+# --------------------------------------------------------------------------- #
+
+
+def years_job(job_id: int, skill: str, min_years: float) -> ScoredJob:
+    requirements = [
+        RequirementInput(name=skill, necessity=Necessity.REQUIRED, min_years=min_years)
+    ]
+    facts = JobFacts(title="Engineer", remote=True)
+    return ScoredJob(
+        job_id=job_id,
+        title="Engineer",
+        company="Co",
+        requirements=requirements,
+        facts=facts,
+        baseline=score_alignment(requirements, [], PREFS, facts),
+    )
+
+
+def test_demanded_years_takes_the_strictest_requirement():
+    board = [years_job(1, "python", 2.0), years_job(2, "python", 5.0)]
+    assert demanded_years(board, "python") == 5.0
+
+
+def test_demanded_years_defaults_to_zero_for_an_unknown_skill():
+    assert demanded_years([years_job(1, "python", 3.0)], "rust") == 0.0
+
+
+def test_learning_a_skill_with_a_years_bar_registers_a_gain():
+    """The bug: this measured +0.0 because the hypothetical had zero years."""
+    board = [years_job(1, "kubernetes", 3.0)]
+    ranked = rank_skills(board, [], PREFS)
+    k8s = next(r for r in ranked if r.skill == "kubernetes")
+    assert k8s.mean_gain > 0, "learning the skill must be worth something"
+    assert k8s.mean_gain == 70.0  # 0 -> full requirements credit, at 70% weight
+
+
+def test_upgrading_a_partially_held_skill_registers_a_gain():
+    """Held at `learning` against a 3-year bar — upgrading must pay."""
+    held = [SkillInput("kubernetes", Proficiency.LEARNING, 0.5)]
+    board = [rescore(years_job(1, "kubernetes", 3.0), held)]
+    assert board[0].baseline.requirements_fit == 50.0  # partial credit
+
+    ranked = rank_skills(board, held, PREFS)
+    k8s = next(r for r in ranked if r.skill == "kubernetes")
+    assert k8s.mean_gain == 35.0  # 50 -> 100 requirements fit, at 70% weight
+
+
+def test_in_demand_skill_outranks_an_obscure_one():
+    """The ranking inversion the years bug caused."""
+    board = [
+        years_job(1, "kubernetes", 3.0),
+        years_job(2, "kubernetes", 2.0),
+        years_job(3, "kubernetes", 4.0),
+        years_job(4, "cobol", 0.0),
+    ]
+    ranked = rank_skills(board, [], PREFS)
+    assert ranked[0].skill == "kubernetes"
+    assert ranked[0].demand == 3
+
+
+def test_what_if_credits_the_years_the_board_asks_for():
+    board = [years_job(1, "terraform", 4.0)]
+    result = simulate(board, [], PREFS, Scenario(add_skills=["terraform"]))
+    assert result.mean_change > 0
+
+
+def test_what_if_respects_an_explicit_years_figure():
+    """Pinning the years below the bar must leave coverage partial."""
+    board = [years_job(1, "terraform", 4.0)]
+    under = simulate(
+        board, [], PREFS, Scenario(add_skills=["terraform"], add_years=1.0)
+    )
+    over = simulate(
+        board, [], PREFS, Scenario(add_skills=["terraform"], add_years=6.0)
+    )
+    assert under.mean_change < over.mean_change
+
+
+def test_profile_with_replaces_rather_than_shadows():
+    """A surviving weaker duplicate is what hid the gain."""
+    held = [SkillInput("go", Proficiency.LEARNING, 0.5)]
+    hypothetical = _profile_with(held, "go", years=3.0)
+    assert len(hypothetical) == 1
+    assert hypothetical[0].proficiency is Proficiency.WORKING
+    assert hypothetical[0].years == 3.0

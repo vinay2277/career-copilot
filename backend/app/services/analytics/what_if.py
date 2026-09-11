@@ -17,7 +17,11 @@ from app.services.analytics.alignment import (
     score_alignment,
 )
 from app.services.analytics.canonical import canonicalize
-from app.services.analytics.skill_roi import UNLOCK_THRESHOLD, ScoredJob
+from app.services.analytics.skill_roi import (
+    UNLOCK_THRESHOLD,
+    ScoredJob,
+    demanded_years,
+)
 
 
 @dataclass(frozen=True)
@@ -28,6 +32,11 @@ class Scenario:
     add_skills: list[str] = None  # type: ignore[assignment]
     #: Proficiency the added skills are assumed to reach.
     add_at: Proficiency = Proficiency.WORKING
+    #: Years of experience to credit the added skills with. `None` means "as
+    #: much as the board actually asks for", which is what makes "I learned
+    #: this" register against requirements phrased as "3+ years of X". A fixed
+    #: 0 would leave those at partial coverage and report no change at all.
+    add_years: float | None = None
     #: Skills to remove, to answer "how much does this skill carry me?"
     remove_skills: list[str] = None  # type: ignore[assignment]
 
@@ -93,18 +102,31 @@ def apply_scenario(
     prefs: PreferenceInput,
     scenario: Scenario,
     aliases: dict[str, str] | None = None,
+    years_for: dict[str, float] | None = None,
 ) -> tuple[list[SkillInput], PreferenceInput]:
-    """Produce the hypothetical profile and preferences. Inputs are untouched."""
+    """Produce the hypothetical profile and preferences. Inputs are untouched.
+
+    `years_for` maps a canonical skill name to the experience to credit it
+    with, and is how `simulate` supplies "whatever the board asks for". An
+    explicit `scenario.add_years` overrides it; falling back to 0 is only
+    correct when nothing states a year count.
+    """
     removed = {canonicalize(n, aliases) for n in scenario.remove_skills}
     kept = [s for s in skills if canonicalize(s.name, aliases) not in removed]
 
     # An added skill that is already present is an upgrade, not a duplicate.
     added_keys = {canonicalize(n, aliases) for n in scenario.add_skills}
     kept = [s for s in kept if canonicalize(s.name, aliases) not in added_keys]
+
+    def years(name: str) -> float:
+        if scenario.add_years is not None:
+            return scenario.add_years
+        return (years_for or {}).get(canonicalize(name, aliases), 0.0)
+
     hypothetical_skills = [
         *kept,
         *(
-            SkillInput(name=n, proficiency=scenario.add_at, years=0.0)
+            SkillInput(name=n, proficiency=scenario.add_at, years=years(n))
             for n in scenario.add_skills
         ),
     ]
@@ -131,7 +153,17 @@ def simulate(
     aliases: dict[str, str] | None = None,
 ) -> SimulationResult:
     """Re-score every job under `scenario` and report what moved."""
-    new_skills, new_prefs = apply_scenario(skills, prefs, scenario, aliases)
+    # Credit each added skill with the most experience any tracked job asks for
+    # in it, unless the caller pinned a number.
+    years_for = {
+        canonicalize(name, aliases): demanded_years(
+            jobs, canonicalize(name, aliases), aliases
+        )
+        for name in scenario.add_skills
+    }
+    new_skills, new_prefs = apply_scenario(
+        skills, prefs, scenario, aliases, years_for
+    )
 
     deltas: list[JobDelta] = []
     for job in jobs:

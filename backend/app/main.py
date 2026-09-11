@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,15 +34,40 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
 )
 
+logger = logging.getLogger(__name__)
+
+
+def _bootstrap_schema() -> None:
+    """Create the schema on a first run, and hand it to Alembic afterwards.
+
+    Naively calling `create_all` on every startup puts the database in a state
+    Alembic cannot manage: the tables exist but no revision is stamped, so the
+    next `alembic upgrade head` dies on "table already exists". So this runs
+    only against a genuinely empty database, and stamps the current head
+    immediately afterwards — leaving Alembic correctly in sync either way.
+
+    A database that already has tables is left strictly alone. Migrations are
+    the only thing that may alter an existing schema.
+    """
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import inspect
+
+    if inspect(engine).get_table_names():
+        return  # already provisioned; `alembic upgrade head` owns it from here
+
+    logger.info("Empty database — creating the schema and stamping it.")
+    Base.metadata.create_all(bind=engine)
+
+    alembic_cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    alembic_cfg.set_main_option("sqlalchemy.url", settings.database_url)
+    command.stamp(alembic_cfg, "head")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Create any missing tables on startup.
-
-    Convenient for local development. Alembic owns the schema in production —
-    `create_all` cannot alter an existing table, so a column added after the
-    first run needs a migration regardless.
-    """
-    Base.metadata.create_all(bind=engine)
+    """Provision the schema on a first run so a fresh clone just works."""
+    _bootstrap_schema()
     yield
 
 

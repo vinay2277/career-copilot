@@ -68,11 +68,48 @@ class SkillROI:
         return len(self.unlocks)
 
 
-def _profile_with(skills: list[SkillInput], skill_name: str) -> list[SkillInput]:
-    """The profile as it would be with `skill_name` newly learned."""
+def demanded_years(
+    jobs: list[ScoredJob],
+    skill: str,
+    aliases: dict[str, str] | None = None,
+) -> float:
+    """The most experience any tracked job asks for in `skill`.
+
+    The counterfactual needs this because "learned the skill" has to mean
+    "cleared the bar the postings actually set". Granting working proficiency
+    with zero years leaves every requirement that says "2+ years" sitting at
+    partial coverage, so the measured gain comes out as exactly zero — and the
+    skills with the most demand are precisely the ones that state a year count,
+    so the ranking inverts and promotes obscure skills over important ones.
+    """
+    return max(
+        (
+            r.min_years
+            for job in jobs
+            for r in job.requirements
+            if canonicalize(r.name, aliases) == skill
+        ),
+        default=0.0,
+    )
+
+
+def _profile_with(
+    skills: list[SkillInput],
+    skill_name: str,
+    years: float = 0.0,
+) -> list[SkillInput]:
+    """The profile as it would be with `skill_name` learned to `years`.
+
+    An existing entry for the same skill is dropped rather than left alongside:
+    scoring keeps the stronger of two duplicates, and a `learning`-level entry
+    surviving here is what made upgrading a partially-held skill measure as no
+    change at all.
+    """
+    key = canonicalize(skill_name)
+    kept = [s for s in skills if canonicalize(s.name) != key]
     return [
-        *skills,
-        SkillInput(name=skill_name, proficiency=ASSUMED_PROFICIENCY, years=0.0),
+        *kept,
+        SkillInput(name=skill_name, proficiency=ASSUMED_PROFICIENCY, years=years),
     ]
 
 
@@ -118,7 +155,9 @@ def rank_skills(
 
     rois: list[SkillROI] = []
     for skill_name, weighted_demand in candidates.items():
-        hypothetical = _profile_with(skills, skill_name)
+        hypothetical = _profile_with(
+            skills, skill_name, demanded_years(jobs, skill_name, aliases)
+        )
 
         gains: list[float] = []
         demand = 0
