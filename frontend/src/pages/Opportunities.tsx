@@ -15,7 +15,7 @@ import {
   formatMoney,
 } from "../components";
 import { useAction, useAsync } from "../hooks";
-import type { ApplicationStatus, Opportunity } from "../types";
+import type { ApplicationStatus, Job, Opportunity } from "../types";
 
 /** Kanban columns, in pipeline order. Terminal states sit at the end. */
 const COLUMNS: ApplicationStatus[] = [
@@ -33,6 +33,27 @@ const NEXT_STATUS: Partial<Record<ApplicationStatus, ApplicationStatus>> = {
   screening: "interviewing",
   interviewing: "offer",
 };
+
+/** A one-line summary containing only the facts the posting stated. */
+function describeJob(job: Job): string {
+  const parts = [job.company];
+
+  if (job.remote) parts.push("remote");
+  else if (job.location) parts.push(job.location);
+
+  if (job.seniority) parts.push(job.seniority);
+
+  // Only mention pay when there is a figure to mention.
+  const { salary_min: lo, salary_max: hi, currency } = job;
+  if (lo != null && hi != null) {
+    parts.push(`${formatMoney(lo, currency)}–${hi.toLocaleString()}`);
+  } else if (lo != null || hi != null) {
+    const known = lo ?? hi;
+    parts.push(`${lo != null ? "from" : "up to"} ${formatMoney(known, currency)}`);
+  }
+
+  return parts.join(" · ");
+}
 
 export default function Opportunities() {
   const { jobId } = useParams();
@@ -202,15 +223,10 @@ function JobDetail({ jobId }: { jobId: number }) {
           ← back to the board
         </Link>
         <h1 style={{ marginTop: "0.4rem" }}>{job.title}</h1>
-        <p>
-          {job.company}
-          {job.location && ` · ${job.location}`}
-          {job.remote && " · remote"}
-          {job.seniority && ` · ${job.seniority}`}
-          {" · "}
-          {formatMoney(job.salary_min, job.currency)}–
-          {formatMoney(job.salary_max, job.currency)}
-        </p>
+        {/* Built from only the parts the posting actually stated. Rendering a
+            salary range unconditionally produced a bare "—–—" on the many
+            postings that publish no figures, which reads as a broken field. */}
+        <p>{describeJob(job)}</p>
       </div>
 
       {action.error && <ErrorNote message={action.error} onDismiss={action.clearError} />}
