@@ -1,0 +1,32 @@
+# Pinned to what was installed and tested on Python 3.13.
+# Regenerate with: pip freeze > requirements.lock.txt
+
+# --- Web framework ---
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+python-multipart==0.0.20
+
+# --- Data / validation ---
+pydantic==2.13.5
+pydantic-settings==2.15.0
+
+# --- Database ---
+sqlalchemy==2.0.52
+alembic==1.14.0
+# Uncomment for PostgreSQL in production:
+# psycopg[binary]==3.2.3
+
+# --- LLM ---
+# Brings in httpx2, which parsers.py also uses for URL fetching.
+anthropic==1.5.0
+
+# --- Document ingestion ---
+pypdf==6.18.1
+pillow==12.3.0
+pytesseract==0.3.13          # also needs the Tesseract binary on the host
+selectolax==0.4.11
+
+# --- Dev / test ---
+pytest==8.3.4
+httpx==0.28.1                # required by fastapi.testclient
+ruff==0.16.7                 # lint rules configured in pyproject.toml

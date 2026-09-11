@@ -1,0 +1,40 @@
+[project]
+name = "career-copilot-backend"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 90
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # import sorting
+    "B",    # bugbear
+    "UP",   # pyupgrade
+    "C4",   # comprehensions
+    "DTZ",  # naive-datetime misuse
+    "RUF",  # ruff's own rules
+]
+ignore = [
+    # `Depends(...)` / `File(...)` / `Query(...)` in a default argument is the
+    # FastAPI idiom, not the mutable-default bug B008 exists to catch.
+    "B008",
+    # Line length is enforced by the formatter, not the linter.
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests deliberately construct naive datetimes to cover the naive-input path,
+# and reuse loose kwargs dicts to prove two calls get identical inputs.
+"tests/*" = ["DTZ001", "C408"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Quiet the third-party deprecation noise; our own warnings still surface.
+filterwarnings = [
+    "ignore::DeprecationWarning:anyio.*",
+    "ignore::DeprecationWarning:starlette.*",
+]
