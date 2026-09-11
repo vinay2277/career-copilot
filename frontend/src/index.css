@@ -127,12 +127,22 @@ pre {
   gap: 1px;
 }
 
+.nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .nav a {
+  /* Block, not inline: as inline elements these flow side by side inside the
+     section wrapper and wrap mid-label. */
+  display: block;
   padding: 0.48rem 0.6rem;
   border-radius: 8px;
   color: var(--text);
   text-decoration: none;
   font-size: 0.9rem;
+  white-space: nowrap;
 }
 
 .nav a:hover {
@@ -179,7 +189,8 @@ pre {
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
-  .nav {
+  .nav,
+  .nav-section {
     flex-direction: row;
     flex-wrap: wrap;
   }

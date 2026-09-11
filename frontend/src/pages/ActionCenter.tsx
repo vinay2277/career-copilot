@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { Card, Empty, ErrorNote, Spinner } from "../components";
-import { useAction } from "../hooks";
+import { AiUnavailableNote, Card, Empty, ErrorNote, Spinner } from "../components";
+import { useAction, useAsync } from "../hooks";
 import type { Guidance } from "../types";
 
 /** Where each recommendation kind sends you. */
@@ -24,8 +24,10 @@ const KIND_LABEL: Record<string, string> = {
 export default function ActionCenter() {
   const [guidance, setGuidance] = useState<Guidance | null>(null);
   const [context, setContext] = useState<string | null>(null);
+  const health = useAsync(() => api.health(), []);
   const ask = useAction();
   const debug = useAction();
+  const aiDown = health.data?.ai_available === false;
 
   // Deliberately not fetched on mount: this endpoint makes a model call, so it
   // sits behind an explicit click rather than firing on every navigation.
@@ -46,14 +48,23 @@ export default function ActionCenter() {
         </p>
       </div>
 
+      <AiUnavailableNote note={health.data?.ai_note ?? null} />
+
       {ask.error && <ErrorNote message={ask.error} onDismiss={ask.clearError} />}
 
       {!guidance && !ask.pending && (
         <Empty title="Ready when you are">
           <p>This one calls the model, so it runs on request rather than on load.</p>
-          <button className="primary" onClick={refresh}>
+          <button className="primary" disabled={aiDown} onClick={refresh}>
             What should I do next?
           </button>
+          {aiDown && (
+            <p className="muted small">
+              The numbers it reads are still available on the{" "}
+              <Link to="/skill-roi">Skill ROI</Link> and{" "}
+              <Link to="/analytics">Analytics</Link> pages.
+            </p>
+          )}
         </Empty>
       )}
 

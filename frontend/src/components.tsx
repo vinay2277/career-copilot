@@ -37,6 +37,21 @@ export function NecessityChip({ necessity }: { necessity: Necessity }) {
   return <span className={`chip chip-${necessity}`}>{label}</span>;
 }
 
+/**
+ * Warns when the backend has no model credentials, on pages that need them.
+ *
+ * Rendered from `/health` so the user sees it before filling in a form, rather
+ * than as an error after the work of pasting a job description.
+ */
+export function AiUnavailableNote({ note }: { note: string | null }) {
+  if (!note) return null;
+  return (
+    <div className="note note-warn" role="status">
+      <span>{note}</span>
+    </div>
+  );
+}
+
 export function Spinner({ label = "Working…" }: { label?: string }) {
   return (
     <div className="spinner" role="status">

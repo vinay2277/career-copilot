@@ -104,5 +104,18 @@ for module in (
 
 
 @app.get("/health", tags=["meta"])
-def health() -> dict[str, str]:
-    return {"status": "ok", "model": settings.llm_model}
+def health() -> dict[str, object]:
+    """Liveness, plus whether the AI features can authenticate.
+
+    `ai_available` lets the UI warn up front instead of after the user has
+    pasted a job description and clicked Extract.
+    """
+    from app.agents.client import NO_CREDENTIALS, credentials_available
+
+    available = credentials_available()
+    return {
+        "status": "ok",
+        "model": settings.llm_model,
+        "ai_available": available,
+        "ai_note": None if available else NO_CREDENTIALS,
+    }

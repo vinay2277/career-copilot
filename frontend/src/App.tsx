@@ -45,7 +45,7 @@ export default function App() {
         </div>
         <nav className="nav">
           {NAV.map((section) => (
-            <div key={section.group}>
+            <div key={section.group} className="nav-section">
               <div className="nav-group">{section.group}</div>
               {section.links.map((link) => (
                 <NavLink key={link.to} to={link.to}>

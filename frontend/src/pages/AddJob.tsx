@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import {
+  AiUnavailableNote,
   Card,
   Confidence,
   ErrorNote,
@@ -9,7 +10,7 @@ import {
   Spinner,
   formatMoney,
 } from "../components";
-import { useAction } from "../hooks";
+import { useAction, useAsync } from "../hooks";
 import type { ExtractionPreview } from "../types";
 
 type Mode = "text" | "url" | "pdf" | "image";
@@ -23,8 +24,10 @@ const MODES: { id: Mode; label: string; hint: string }[] = [
 
 export default function AddJob() {
   const navigate = useNavigate();
+  const health = useAsync(() => api.health(), []);
   const extract = useAction();
   const confirm = useAction();
+  const aiDown = health.data?.ai_available === false;
 
   const [mode, setMode] = useState<Mode>("text");
   const [text, setText] = useState("");
@@ -79,6 +82,8 @@ export default function AddJob() {
         </p>
       </div>
 
+      <AiUnavailableNote note={health.data?.ai_note ?? null} />
+
       <Card>
         <div className="tabs">
           {MODES.map((m) => (
@@ -107,7 +112,7 @@ export default function AddJob() {
             />
             <button
               className="primary"
-              disabled={extract.pending || text.trim().length < 120}
+              disabled={aiDown || extract.pending || text.trim().length < 120}
               onClick={() => void run()}
               style={{ marginTop: "0.6rem" }}
             >
@@ -132,7 +137,11 @@ export default function AddJob() {
                 onKeyDown={(e) => e.key === "Enter" && void run()}
               />
             </label>
-            <button className="primary" disabled={extract.pending || !url} onClick={() => void run()}>
+            <button
+              className="primary"
+              disabled={aiDown || extract.pending || !url}
+              onClick={() => void run()}
+            >
               Fetch &amp; extract
             </button>
           </div>
@@ -144,7 +153,7 @@ export default function AddJob() {
             <input
               type="file"
               accept={mode === "pdf" ? ".pdf" : "image/*"}
-              disabled={extract.pending}
+              disabled={aiDown || extract.pending}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) void run(file);

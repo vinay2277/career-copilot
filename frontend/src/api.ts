@@ -76,7 +76,17 @@ const upload = <T,>(path: string, file: File) => {
   return request<T>(path, { method: "POST", body: form });
 };
 
+export interface Health {
+  status: string;
+  model: string;
+  /** False when the backend has no Anthropic credentials. */
+  ai_available: boolean;
+  ai_note: string | null;
+}
+
 export const api = {
+  health: () => request<Health>("/health"),
+
   // --- Profile ---
   getProfile: () => request<Profile>("/api/profile"),
   saveProfile: (payload: Omit<Profile, "id">) =>

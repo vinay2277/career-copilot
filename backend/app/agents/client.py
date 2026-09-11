@@ -27,6 +27,16 @@ class AgentError(RuntimeError):
     """An agent call failed in a way the caller should surface, not swallow."""
 
 
+#: Shown whenever credentials cannot be resolved. The SDK's own message is
+#: accurate but says nothing about where to put a key in *this* project.
+NO_CREDENTIALS = (
+    "No Anthropic credentials found, so the AI features are unavailable. "
+    "Set ANTHROPIC_API_KEY in backend/.env and restart the server, or run "
+    "`ant auth login`. Everything that doesn't call the model — scoring, the "
+    "board, skill ROI, what-if and analytics — works without this."
+)
+
+
 @lru_cache
 def get_client() -> anthropic.Anthropic:
     """The process-wide Anthropic client.
@@ -37,6 +47,25 @@ def get_client() -> anthropic.Anthropic:
     if settings.anthropic_api_key:
         return anthropic.Anthropic(api_key=settings.anthropic_api_key)
     return anthropic.Anthropic()
+
+
+def credentials_available() -> bool:
+    """Whether a model call could authenticate right now.
+
+    Construction succeeds with no credentials — the SDK only resolves them when
+    a request is built — so this probes the resolution path directly rather than
+    trusting a successful `Anthropic()`. Used by `/health` so the UI can warn
+    before the user fills in a form and clicks.
+    """
+    try:
+        get_client()._validate_headers({}, {})
+    except TypeError:
+        return False
+    except Exception:
+        # Any other failure is not a credentials problem; let the real call
+        # report it rather than mislabelling it here.
+        return True
+    return True
 
 
 def structured_call(
@@ -91,6 +120,17 @@ def structured_call(
         raise AgentError(f"Model API error {e.status_code}: {e.message}") from e
     except anthropic.APIConnectionError as e:
         raise AgentError("Could not reach the model API.") from e
+    except TypeError as e:
+        # The SDK raises a bare TypeError from _validate_headers when no
+        # credential source resolves — not an AnthropicError, so it would
+        # otherwise escape this handler as an opaque 500.
+        if "authentication method" in str(e):
+            raise AgentError(NO_CREDENTIALS) from e
+        raise
+    except anthropic.AnthropicError as e:
+        # Catch-all for SDK errors that aren't APIStatusError subclasses, so an
+        # agent failure is always an AgentError and never a 500.
+        raise AgentError(f"Model client error: {e}") from e
 
     if response.stop_reason == "refusal":
         detail = getattr(response.stop_details, "explanation", None) or "no detail given"
