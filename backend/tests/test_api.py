@@ -116,8 +116,14 @@ def test_health(client):
     assert client.get("/health").json()["status"] == "ok"
 
 
-def test_profile_requires_creation_first(client):
-    assert client.get("/api/profile").status_code == 404
+def test_reading_the_profile_before_saving_one_works(client):
+    """It used to 404 here, which made every route on a fresh instance fail —
+    including the résumé upload that would have created the profile. The
+    profile is a singleton, so it is created on first touch instead.
+    See tests/test_fresh_instance.py."""
+    response = client.get("/api/profile")
+    assert response.status_code == 200
+    assert response.json()["full_name"] == ""
 
 
 def test_profile_round_trip(client):
