@@ -1,0 +1,33 @@
+# Keep the build context small and secrets out of the image.
+
+.git
+.gitattributes
+.gitignore
+
+# Never copy real credentials into an image.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Rebuilt inside the image; copying them in breaks native modules and wastes
+# most of the build context.
+**/node_modules
+**/venv
+**/.venv
+**/__pycache__
+**/*.py[cod]
+
+# The frontend build is produced by the Node stage, not copied from the host.
+frontend/dist
+
+# Local data must not ship in the image.
+**/*.db
+**/*.sqlite3
+
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+.vscode
+.idea
+docs
+README.md

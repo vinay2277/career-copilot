@@ -68,6 +68,20 @@ filenames that exceed the 260-character limit from a deeply nested directory.
 Full instructions, the AI-feature setup, and troubleshooting:
 [`docs/SETUP.md`](docs/SETUP.md).
 
+## Deploying
+
+Builds to a single image that serves the API and the frontend on one port, so
+any Docker host works:
+
+```bash
+docker compose up --build     # app + PostgreSQL, on :8000
+```
+
+**Before putting it on a public URL:** there is no authentication and no rate
+limiting, so anyone with the link can read the profile and spend your API
+credit. See [`docs/DEPLOY.md`](docs/DEPLOY.md) for the details and what has
+actually been tested.
+
 ## License
 
 MIT

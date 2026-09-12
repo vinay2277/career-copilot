@@ -1,0 +1,52 @@
+# Local production-shaped run: the app plus a real PostgreSQL, rather than the
+# SQLite file development uses.
+#
+#   docker compose up --build
+#   -> http://localhost:8000
+#
+# Put your key in backend/.env first; it is read from there, never baked into
+# the image.
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: career
+      POSTGRES_PASSWORD: career
+      POSTGRES_DB: career_copilot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Not published to the host by default — the app reaches it over the
+    # compose network. Uncomment to inspect it with a local client.
+    # ports:
+    #   - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U career -d career_copilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - backend/.env
+    environment:
+      # Overrides whatever DATABASE_URL is in .env, which points at SQLite for
+      # local development.
+      DATABASE_URL: postgresql+psycopg://career:career@db:5432/career_copilot
+      # The frontend is served from this same origin, so no cross-origin
+      # request is ever made and this list only matters if you point a
+      # separately hosted frontend at this API.
+      CORS_ORIGINS: http://localhost:8000
+    depends_on:
+      db:
+        # Wait for readiness, not just for the container to exist — Postgres
+        # accepts connections several seconds after the process starts, and
+        # the app's schema bootstrap runs immediately on boot.
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
