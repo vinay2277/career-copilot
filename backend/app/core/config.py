@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,7 +43,23 @@ class Settings(BaseSettings):
         return self.openai_model
 
     # --- Database ---
+    # Managed Postgres providers (Render, Railway, Heroku, Fly) all hand out a
+    # `postgres://` URL, which SQLAlchemy 2 rejects outright — it wants an
+    # explicit driver. Normalized below rather than left as a manual step,
+    # because the failure is a startup crash with an opaque dialect error and
+    # it would catch every single person deploying this.
     database_url: str = "sqlite:///./career_copilot.db"
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalize_database_url(cls, value: str) -> str:
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql+psycopg://", 1)
+        # `postgresql://` alone resolves to psycopg2, which isn't installed;
+        # pin it to psycopg 3, which is.
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+psycopg://", 1)
+        return value
 
     # --- Server ---
     api_host: str = "0.0.0.0"

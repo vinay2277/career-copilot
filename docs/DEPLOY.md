@@ -81,10 +81,40 @@ cd ..\backend; python -m uvicorn app.main:app --port 8000
 The backend picks up `frontend/dist` automatically and serves everything on
 :8000.
 
-## To a host
+## To Render, step by step
 
-Any platform that builds a Dockerfile works — Render, Railway, Fly, Cloud Run.
-The image honours `$PORT`, which all of them set.
+A `render.yaml` blueprint is in the repo, so most of this is click-through.
+
+1. **Push the branch** you want deployed. Render builds from GitHub.
+2. Go to [dashboard.render.com](https://dashboard.render.com) → **New** →
+   **Blueprint**.
+3. Connect the GitHub repo and pick the branch (`vinay_v1` unless you have
+   merged to `main`).
+4. Render reads `render.yaml` and shows a web service plus a Postgres database.
+   It will prompt for **`OPENAI_API_KEY`** — that is the only value you type.
+   `SECRET_KEY` and `APP_PASSWORD` are generated, `DATABASE_URL` is wired to
+   the database, `COOKIE_SECURE` is already true.
+5. **Apply.** The first build takes roughly 5–10 minutes: it installs Node,
+   builds the frontend, then installs the Python dependencies.
+6. When it goes live, open the service → **Environment** → reveal
+   **`APP_PASSWORD`**. That is your login. Change it there if you would rather
+   pick your own; the service restarts on save.
+7. Open the URL, enter the password, and upload your résumé.
+
+### Two things about Render's free tier
+
+- **The service sleeps after 15 minutes idle.** The next request takes 30–60
+  seconds to wake it. Harmless for personal use; it looks broken in a demo, so
+  load the page a minute beforehand.
+- **The free database is deleted after 30 days.** Render will email first. Back
+  up with `pg_dump`, or move to the paid plan, or switch to SQLite on a
+  persistent disk (also paid).
+
+### Other hosts
+
+Anything that builds a Dockerfile works — Railway, Fly, Cloud Run. The image
+honours `$PORT`, which all of them set. Without a blueprint you set the
+variables from the table below by hand; nothing else differs.
 
 What to configure:
 
@@ -93,15 +123,14 @@ What to configure:
 | `APP_PASSWORD` | **Required.** Without it the API is open to anyone. |
 | `SECRET_KEY` | **Required.** Stable and secret, or sessions break on restart. |
 | `COOKIE_SECURE` | `true` — every real host terminates TLS. |
-| `DATABASE_URL` | The managed Postgres URL, rewritten as `postgresql+psycopg://...` |
+| `DATABASE_URL` | The managed Postgres URL, as the provider gives it |
 | `OPENAI_API_KEY` | Your key, as a secret |
 | `LLM_PROVIDER` | `openai` (default) or `anthropic` |
 | `CORS_ORIGINS` | Only matters if a separately hosted frontend calls this API |
 
-**`DATABASE_URL` needs rewriting.** Managed Postgres hands out
-`postgres://user:pass@host/db`; SQLAlchemy needs
-`postgresql+psycopg://user:pass@host/db`. A URL left in the platform's default
-form fails at startup with an unhelpful dialect error.
+**`DATABASE_URL` is normalized for you.** Managed Postgres hands out
+`postgres://user:pass@host/db`, which SQLAlchemy 2 rejects; the app rewrites it
+to `postgresql+psycopg://` at startup. Paste the provider's URL as-is.
 
 **Use a managed database, not the container's disk.** Most platforms have
 ephemeral filesystems — a SQLite file inside the container is wiped on every
