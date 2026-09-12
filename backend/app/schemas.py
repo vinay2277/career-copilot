@@ -93,6 +93,32 @@ class ResumeOut(BaseModel):
     created_at: datetime
 
 
+class ProfileUpdateOut(BaseModel):
+    """What uploading a resume did to the profile.
+
+    Returned rather than applied silently: the user should be able to see that
+    their profile changed, and what to.
+    """
+
+    applied: bool
+    summary: str
+    field_changes: list[str] = Field(default_factory=list)
+    skills_added: list[str] = Field(default_factory=list)
+    skills_raised: list[str] = Field(default_factory=list)
+    #: Named by the resume but already at or above that level on the profile.
+    skills_unchanged: list[str] = Field(default_factory=list)
+    #: Dropped for lack of a supporting quote in the resume.
+    skills_rejected: list[str] = Field(default_factory=list)
+    education: list[str] = Field(default_factory=list)
+    certifications: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class ResumeUploadOut(BaseModel):
+    resume: ResumeOut
+    profile_update: ProfileUpdateOut | None = None
+
+
 class TailoredResumeOut(BaseModel):
     model_config = _orm
     id: int

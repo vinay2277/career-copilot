@@ -106,6 +106,34 @@ def test_openai_path_does_not_send_anthropic_only_params(monkeypatch):
     assert "reasoning_effort" not in seen  # unset by default
 
 
+def test_max_tokens_is_clamped_to_the_model_ceiling(monkeypatch):
+    """Regression: an agent asking for 32000 was a hard 400 on gpt-4o.
+
+    Anthropic's current models take 128K output tokens, gpt-4o takes 16384.
+    Exceeding the limit is rejected outright rather than truncated, so the
+    agents' own figures have to be capped on the way out.
+    """
+    monkeypatch.setattr(settings, "openai_max_output_tokens", 16384)
+    seen = stub_openai(monkeypatch)
+    structured_call(system="s", user="u", output_model=Reply, max_tokens=32000)
+    assert seen["max_completion_tokens"] == 16384
+
+
+def test_a_request_under_the_ceiling_is_left_alone(monkeypatch):
+    monkeypatch.setattr(settings, "openai_max_output_tokens", 16384)
+    seen = stub_openai(monkeypatch)
+    structured_call(system="s", user="u", output_model=Reply, max_tokens=4000)
+    assert seen["max_completion_tokens"] == 4000
+
+
+def test_the_ceiling_is_configurable(monkeypatch):
+    """A model that supports more output should be able to use it."""
+    monkeypatch.setattr(settings, "openai_max_output_tokens", 100_000)
+    seen = stub_openai(monkeypatch)
+    structured_call(system="s", user="u", output_model=Reply, max_tokens=32000)
+    assert seen["max_completion_tokens"] == 32000
+
+
 def test_reasoning_effort_is_opt_in(monkeypatch):
     monkeypatch.setattr(settings, "openai_reasoning_effort", "high")
     seen = stub_openai(monkeypatch)

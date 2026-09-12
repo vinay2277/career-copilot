@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     # --- OpenAI ---
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
+    # Hard ceiling on completion tokens, applied to every request. Agents ask
+    # for what their task needs; some ask for more than a given model allows,
+    # and exceeding it is a 400 rather than a truncation. gpt-4o's limit is
+    # 16384. Raise this for a model that supports more.
+    openai_max_output_tokens: int = 16384
     # Only reasoning models (o-series and later) accept a reasoning effort.
     # Left unset so it is never sent to a model that would reject it.
     openai_reasoning_effort: str = ""

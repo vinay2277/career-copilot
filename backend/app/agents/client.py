@@ -148,6 +148,20 @@ def _call_openai(
         # guard as the request itself — otherwise this escapes as a 500.
         raise AgentError(no_credentials()) from e
 
+    # Clamp rather than pass through. Agents pick max_tokens for their task,
+    # and the two providers allow very different ceilings — Anthropic's current
+    # models take 128K output, gpt-4o takes 16384. Exceeding the limit is a 400,
+    # not a truncation, so an agent asking for 32000 fails outright on OpenAI
+    # unless it is capped here.
+    capped = min(max_tokens, settings.openai_max_output_tokens)
+    if capped < max_tokens:
+        logger.debug(
+            "capped max_tokens %s -> %s for %s",
+            max_tokens,
+            capped,
+            settings.openai_model,
+        )
+
     kwargs: dict[str, object] = {
         "model": settings.openai_model,
         "messages": [
@@ -155,7 +169,7 @@ def _call_openai(
             {"role": "user", "content": user},
         ],
         "response_format": output_model,
-        "max_completion_tokens": max_tokens,
+        "max_completion_tokens": capped,
     }
     # Reasoning models take this; general models reject it. Opt-in only.
     if settings.openai_reasoning_effort:

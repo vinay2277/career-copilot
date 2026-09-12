@@ -181,6 +181,31 @@ career-copilot/
 └── docs/
 ```
 
+## Resume → profile
+
+Uploading a resume (`POST /api/resume`) parses it, reads the candidate's
+details out of it, merges them into the profile, and re-scores every tracked
+job. Two rules govern the merge:
+
+- **The resume may add a skill or raise its level. It never removes one or
+  lowers it.** A level read off a resume is an inference; one the user typed is
+  a statement. So re-uploading is always safe — it cannot demote a correction
+  made by hand. `POST /api/resume/{id}/to-profile` re-runs it on a stored
+  resume, and running it twice is a no-op the second time.
+- **A field the resume doesn't mention is left alone, never blanked.** An
+  absent email means the resume listed none.
+
+Scalar fields the resume *does* state (name, headline, total years) are
+replaced, so the response returns a changeset the UI displays rather than
+rewriting the profile silently. Every extracted skill needs a supporting quote
+from the resume; one without evidence is dropped and reported, which is the
+same anti-hallucination discipline the job pipeline uses.
+
+Degrees and certifications are captured separately and never become skills —
+see the note on screening criteria above.
+
+Pass `?update_profile=false` to upload and score without touching the profile.
+
 ## The one architectural rule
 
 **Agents never compute numbers.** Alignment scores, skill ROI, conversion

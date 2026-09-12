@@ -234,6 +234,27 @@ export interface Resume {
   created_at: string;
 }
 
+/** What uploading a resume did to the profile. */
+export interface ProfileUpdate {
+  applied: boolean;
+  summary: string;
+  field_changes: string[];
+  skills_added: string[];
+  skills_raised: string[];
+  /** Named by the resume but already at or above that level on the profile. */
+  skills_unchanged: string[];
+  /** Dropped for lack of a supporting quote in the resume. */
+  skills_rejected: string[];
+  education: string[];
+  certifications: string[];
+  notes: string[];
+}
+
+export interface ResumeUpload {
+  resume: Resume;
+  profile_update: ProfileUpdate | null;
+}
+
 export interface TailoredResume {
   id: number;
   job_id: number;

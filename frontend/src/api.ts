@@ -9,7 +9,9 @@ import type {
   LearningPath,
   Opportunity,
   Profile,
+  ProfileUpdate,
   Resume,
+  ResumeUpload,
   Scenario,
   Simulation,
   SkillROI,
@@ -134,8 +136,15 @@ export const api = {
 
   // --- Resume ---
   listResumes: () => request<Resume[]>("/api/resume"),
-  uploadResume: (file: File) => upload<Resume>("/api/resume", file),
+  /** Uploads, analyzes, and (unless disabled) populates the profile from it. */
+  uploadResume: (file: File, updateProfile = true) =>
+    upload<ResumeUpload>(
+      `/api/resume?update_profile=${updateProfile}`,
+      file,
+    ),
   reanalyzeResume: (id: number) => post<Resume>(`/api/resume/${id}/reanalyze`),
+  applyResumeToProfile: (id: number) =>
+    post<ProfileUpdate>(`/api/resume/${id}/to-profile`),
   tailorResume: (jobId: number) => post<TailoredResume>(`/api/resume/tailor/${jobId}`),
   listTailored: (jobId: number) =>
     request<TailoredResume[]>(`/api/resume/tailored/${jobId}`),

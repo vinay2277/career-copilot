@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Card, ErrorNote, ScoreBar, Spinner } from "../components";
 import { useAction, useAsync } from "../hooks";
-import type { Preferences, Proficiency, Resume, Skill } from "../types";
+import type {
+  Preferences,
+  Proficiency,
+  ProfileUpdate,
+  Resume,
+  Skill,
+} from "../types";
 
 const PROFICIENCIES: Proficiency[] = ["learning", "working", "proficient", "expert"];
 
@@ -24,6 +30,117 @@ const toList = (text: string) =>
     .map((s) => s.trim())
     .filter(Boolean);
 
+/**
+ * What the resume upload did to the profile.
+ *
+ * Shown rather than applied silently — the user's profile just changed
+ * underneath them, and they should be able to see what to and disagree.
+ */
+function ProfileUpdateReport({ update }: { update: ProfileUpdate }) {
+  if (!update.applied) {
+    return (
+      <div className="note note-info" role="status">
+        <span>{update.summary}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ marginTop: "0.8rem", marginBottom: 0 }}>
+      <h3>Profile updated from your resume</h3>
+
+      {update.field_changes.length > 0 && (
+        <>
+          <h4 className="muted small">Details</h4>
+          <ul className="clean small">
+            {update.field_changes.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {update.skills_added.length > 0 && (
+        <>
+          <h4 className="muted small">
+            Skills added ({update.skills_added.length})
+          </h4>
+          <ul className="tag-list">
+            {update.skills_added.map((s) => (
+              <li key={s} className="tag">
+                {s}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {update.skills_raised.length > 0 && (
+        <>
+          <h4 className="muted small">Levels raised</h4>
+          <ul className="clean small">
+            {update.skills_raised.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {update.skills_unchanged.length > 0 && (
+        <p className="muted small">
+          Already covered at the same level or better:{" "}
+          {update.skills_unchanged.join(", ")}
+        </p>
+      )}
+
+      {update.skills_rejected.length > 0 && (
+        <div className="note note-warn" style={{ marginTop: "0.6rem" }}>
+          <span>
+            Skipped for lack of a supporting quote in the resume:{" "}
+            {update.skills_rejected.join(", ")}. Add them by hand if they're
+            genuine — the extractor won't claim a skill it can't point at.
+          </span>
+        </div>
+      )}
+
+      {(update.education.length > 0 || update.certifications.length > 0) && (
+        <p className="muted small">
+          {update.education.length > 0 && (
+            <>
+              <strong>Education:</strong> {update.education.join("; ")}.{" "}
+            </>
+          )}
+          {update.certifications.length > 0 && (
+            <>
+              <strong>Certifications:</strong> {update.certifications.join("; ")}.
+            </>
+          )}{" "}
+          Recorded but not scored — neither is a skill you can be matched on.
+        </p>
+      )}
+
+      {update.notes.length > 0 && (
+        <>
+          <h4 className="muted small">Worth checking</h4>
+          <ul className="clean small">
+            {update.notes.map((n, i) => (
+              <li key={i}>{n}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <p className="muted small" style={{ marginTop: "0.6rem" }}>
+        Every score on your board has been recomputed. Worth a glance before you
+        trust it: a skill level is only ever raised, so anything you set by hand
+        survived — but the fields above (name, headline, total years) were
+        replaced by what the resume said, so correct those if the resume
+        undersells you.
+      </p>
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const profile = useAsync(() => api.getProfile().catch(() => null), []);
   const resumes = useAsync(() => api.listResumes().catch(() => [] as Resume[]), []);
@@ -41,6 +158,7 @@ export default function ProfilePage() {
   const [newSkill, setNewSkill] = useState("");
   const [newProf, setNewProf] = useState<Proficiency>("working");
   const [newYears, setNewYears] = useState(1);
+  const [profileUpdate, setProfileUpdate] = useState<ProfileUpdate | null>(null);
 
   // Hydrate the form once the profile arrives. A 404 (no profile yet) leaves
   // the blank form in place, which is the correct first-run state.
@@ -82,8 +200,16 @@ export default function ProfilePage() {
   };
 
   const uploadResume = async (file: File) => {
-    const uploaded = await resumeAction.run(() => api.uploadResume(file));
-    if (uploaded) resumes.reload();
+    const result = await resumeAction.run(() => api.uploadResume(file));
+    if (!result) return;
+
+    resumes.reload();
+    setProfileUpdate(result.profile_update);
+
+    // The merge happened server-side, so the form above is now stale. Reload
+    // the profile rather than trying to replay the changeset locally — the
+    // backend is the authority on what the merge actually did.
+    if (result.profile_update?.applied) profile.reload();
   };
 
   const primary = resumes.data?.find((r) => r.is_primary) ?? null;
@@ -286,20 +412,43 @@ export default function ProfilePage() {
           title="Resume"
           actions={
             primary && (
-              <button
-                disabled={resumeAction.pending}
-                onClick={async () => {
-                  const updated = await resumeAction.run(() =>
-                    api.reanalyzeResume(primary.id),
-                  );
-                  if (updated) resumes.reload();
-                }}
-              >
-                Re-analyze
-              </button>
+              <>
+                <button
+                  disabled={resumeAction.pending}
+                  onClick={async () => {
+                    const result = await resumeAction.run(() =>
+                      api.applyResumeToProfile(primary.id),
+                    );
+                    if (result) {
+                      setProfileUpdate(result);
+                      if (result.applied) profile.reload();
+                    }
+                  }}
+                >
+                  Re-read into profile
+                </button>
+                <button
+                  disabled={resumeAction.pending}
+                  onClick={async () => {
+                    const updated = await resumeAction.run(() =>
+                      api.reanalyzeResume(primary.id),
+                    );
+                    if (updated) resumes.reload();
+                  }}
+                >
+                  Re-score
+                </button>
+              </>
             )
           }
         >
+          <p className="muted small">
+            Uploading reads your details straight out of the resume and fills in
+            the profile — name, headline, total experience, and every skill it
+            can quote. It only ever adds a skill or raises its level, so
+            anything you corrected by hand survives a re-upload.
+          </p>
+
           <label>
             Upload a PDF or text resume
             <input
@@ -312,7 +461,11 @@ export default function ProfilePage() {
             />
           </label>
 
-          {resumeAction.pending && <Spinner label="Analyzing resume…" />}
+          {resumeAction.pending && (
+            <Spinner label="Reading the resume and filling in your profile…" />
+          )}
+
+          {profileUpdate && <ProfileUpdateReport update={profileUpdate} />}
 
           {primary ? (
             <>
