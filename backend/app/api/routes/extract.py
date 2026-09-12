@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.agents.client import AgentError
 from app.api.deps import get_profile
 from app.core.config import settings
+from app.core.security import rate_limit_ai
 from app.db.session import get_db
 from app.models import Application, JobPost, JobRequirement, Profile
 from app.models.enums import ApplicationStatus, Necessity, SourceKind
@@ -29,6 +30,11 @@ from app.services.ingestion.pipeline import ValidatedJob, ingest
 from app.services.scoring import refresh_cached_score
 
 router = APIRouter(prefix="/api/extract", tags=["extract"])
+
+#: Every ingestion route makes two model calls (extract, then validate), so the
+#: whole router carries the AI budget. `/confirm` is the exception — it only
+#: persists an already-validated payload — and is declared separately below.
+AI = [Depends(rate_limit_ai)]
 
 
 def _to_preview(result: ValidatedJob) -> ExtractionPreview:
@@ -112,23 +118,23 @@ async def _read_upload(file: UploadFile) -> bytes:
     return data
 
 
-@router.post("/text", response_model=ExtractionPreview)
+@router.post("/text", response_model=ExtractionPreview, dependencies=AI)
 def extract_from_text(payload: ExtractTextIn) -> ExtractionPreview:
     return _run(source_kind=SourceKind.TEXT, text=payload.text)
 
 
-@router.post("/url", response_model=ExtractionPreview)
+@router.post("/url", response_model=ExtractionPreview, dependencies=AI)
 def extract_from_url(payload: ExtractUrlIn) -> ExtractionPreview:
     return _run(source_kind=SourceKind.URL, url=payload.url)
 
 
-@router.post("/pdf", response_model=ExtractionPreview)
+@router.post("/pdf", response_model=ExtractionPreview, dependencies=AI)
 async def extract_from_pdf(file: UploadFile = File(...)) -> ExtractionPreview:
     data = await _read_upload(file)
     return _run(source_kind=SourceKind.PDF, file_bytes=data)
 
 
-@router.post("/image", response_model=ExtractionPreview)
+@router.post("/image", response_model=ExtractionPreview, dependencies=AI)
 async def extract_from_image(file: UploadFile = File(...)) -> ExtractionPreview:
     data = await _read_upload(file)
     return _run(source_kind=SourceKind.IMAGE, file_bytes=data)

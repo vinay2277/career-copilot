@@ -49,6 +49,31 @@ class Settings(BaseSettings):
     api_port: int = 8000
     cors_origins: str = "http://localhost:5173"
 
+    # --- Access control ---
+    # Empty disables the gate entirely, which is what makes local development
+    # frictionless. Set it for anything reachable from outside your machine:
+    # without it, whoever has the URL can read the résumé and spend the API key.
+    app_password: str = ""
+    # Signs the session cookie. Must be stable across restarts or everyone is
+    # logged out on every deploy; must be secret or the cookie is forgeable.
+    secret_key: str = ""
+    session_days: int = 30
+    # Send the cookie only over HTTPS. Leave false for plain-http localhost,
+    # true anywhere real.
+    cookie_secure: bool = False
+
+    # --- Rate limits (per client, per window) ---
+    # The AI endpoints spend money on every call, so they get their own much
+    # tighter budget than ordinary reads.
+    rate_limit_ai_per_hour: int = 40
+    rate_limit_api_per_minute: int = 120
+    # Brute-forcing one shared password is the obvious attack on this design.
+    rate_limit_login_per_hour: int = 10
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.app_password)
+
     # --- Ingestion ---
     tesseract_cmd: str = ""
     max_upload_mb: int = 15

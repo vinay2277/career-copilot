@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,6 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from app import models  # noqa: F401  (imported for its side effect, see below)
 
@@ -19,6 +21,7 @@ from app import models  # noqa: F401  (imported for its side effect, see below)
 # `app` and shadow the FastAPI instance defined below.
 from app.api.routes import (
     analytics,
+    auth,
     extract,
     interview,
     learning,
@@ -28,6 +31,7 @@ from app.api.routes import (
     simulation,
 )
 from app.core.config import settings
+from app.core.security import PROTECTED, startup_check
 from app.db.session import Base, engine
 
 logging.basicConfig(
@@ -69,6 +73,7 @@ def _bootstrap_schema() -> None:
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Provision the schema on a first run so a fresh clone just works."""
     _bootstrap_schema()
+    startup_check()
     yield
 
 
@@ -91,6 +96,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Signs the session cookie the password gate issues. A random per-process key
+# is a deliberate fallback rather than a hard failure: it keeps a local
+# checkout working with no configuration, at the cost of logging everyone out
+# on restart. startup_check() warns when that is happening.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.secret_key or secrets.token_urlsafe(32),
+    session_cookie="career_copilot_session",
+    max_age=settings.session_days * 86400,
+    same_site="lax",
+    https_only=settings.cookie_secure,
+)
+
+# Unauthenticated by necessity — this is where you sign in.
+app.include_router(auth.router)
+
+# Everything else sits behind the gate and the general rate limit. Applied here
+# rather than on each router so a new router cannot be added unprotected by
+# accident; the individually expensive routes carry an extra AI limit of their
+# own.
 for module in (
     profile,
     extract,
@@ -101,7 +126,7 @@ for module in (
     interview,
     learning,
 ):
-    app.include_router(module.router)
+    app.include_router(module.router, dependencies=PROTECTED)
 
 
 def _mount_frontend() -> None:

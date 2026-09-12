@@ -11,12 +11,16 @@ from sqlalchemy.orm import Session
 from app.agents.client import AgentError
 from app.agents.interview import generate_questions, grade_answer, summarize_session
 from app.api.deps import get_profile
+from app.core.security import rate_limit_ai
 from app.db.session import get_db
 from app.models import InterviewSession, InterviewTurn, JobPost, Profile
 from app.schemas import AnswerIn, InterviewSessionOut, InterviewStartIn, TurnOut
 from app.services.scoring import score_job
 
 router = APIRouter(prefix="/api/interview", tags=["interview"])
+
+#: Routes that call a model. Listing and reading sessions do not.
+AI = [Depends(rate_limit_ai)]
 
 #: What a strong answer contains, per question. Generated alongside the
 #: question and needed again at grading time, but not worth its own column —
@@ -40,7 +44,10 @@ def list_sessions(
 
 
 @router.post(
-    "", response_model=InterviewSessionOut, status_code=status.HTTP_201_CREATED
+    "",
+    response_model=InterviewSessionOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=AI,
 )
 def start_session(
     payload: InterviewStartIn,
@@ -105,7 +112,11 @@ def read_session(
     return session
 
 
-@router.post("/{session_id}/turns/{position}/answer", response_model=TurnOut)
+@router.post(
+    "/{session_id}/turns/{position}/answer",
+    response_model=TurnOut,
+    dependencies=AI,
+)
 def submit_answer(
     session_id: int,
     position: int,
@@ -148,7 +159,9 @@ def submit_answer(
     return turn
 
 
-@router.post("/{session_id}/complete", response_model=InterviewSessionOut)
+@router.post(
+    "/{session_id}/complete", response_model=InterviewSessionOut, dependencies=AI
+)
 def complete_session(
     session_id: int,
     db: Session = Depends(get_db),

@@ -1,4 +1,7 @@
+import { useCallback, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import Login from "./Login";
+import { api } from "./api";
 import ActionCenter from "./pages/ActionCenter";
 import AddJob from "./pages/AddJob";
 import Analytics from "./pages/Analytics";
@@ -35,7 +38,73 @@ const NAV = [
   },
 ];
 
+/**
+ * Sign-out, rendered only when there is a gate to sign out of.
+ *
+ * Hidden entirely on an unprotected local instance, where a "sign out" that
+ * does nothing would just be confusing.
+ */
+function SignOut({ onDone }: { onDone: () => void }) {
+  const [required, setRequired] = useState(false);
+
+  useEffect(() => {
+    api
+      .authStatus()
+      .then((s) => setRequired(s.auth_required))
+      .catch(() => setRequired(false));
+  }, []);
+
+  if (!required) return null;
+
+  return (
+    <button
+      className="link sign-out"
+      onClick={async () => {
+        try {
+          await api.logout();
+        } finally {
+          onDone();
+        }
+      }}
+    >
+      Sign out
+    </button>
+  );
+}
+
 export default function App() {
+  const [gate, setGate] = useState<"checking" | "locked" | "open">("checking");
+
+  const check = useCallback(async () => {
+    try {
+      const status = await api.authStatus();
+      setGate(status.authenticated ? "open" : "locked");
+    } catch {
+      // The gate can't be determined — usually the backend is down. Let the
+      // app render so its own error handling explains what's wrong, rather
+      // than showing a login screen for a server that isn't there.
+      setGate("open");
+    }
+  }, []);
+
+  useEffect(() => {
+    void check();
+  }, [check]);
+
+  // Any 401 from any request means the session ended mid-use.
+  useEffect(() => {
+    const onUnauthenticated = () => setGate("locked");
+    window.addEventListener("career-copilot:unauthenticated", onUnauthenticated);
+    return () =>
+      window.removeEventListener(
+        "career-copilot:unauthenticated",
+        onUnauthenticated,
+      );
+  }, []);
+
+  if (gate === "checking") return <div className="login-screen" />;
+  if (gate === "locked") return <Login onSuccess={() => setGate("open")} />;
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -55,6 +124,8 @@ export default function App() {
             </div>
           ))}
         </nav>
+
+        <SignOut onDone={() => setGate("locked")} />
       </aside>
 
       <main className="main">

@@ -10,6 +10,11 @@ python-multipart==0.0.20
 pydantic==2.13.5
 pydantic-settings==2.15.0
 
+# --- Sessions ---
+# Starlette's SessionMiddleware signs the cookie with this; it is an optional
+# dependency there, so it has to be requested explicitly.
+itsdangerous==2.2.0
+
 # --- Database ---
 sqlalchemy==2.0.52
 alembic==1.14.0

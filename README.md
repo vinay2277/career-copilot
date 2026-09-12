@@ -77,10 +77,11 @@ any Docker host works:
 docker compose up --build     # app + PostgreSQL, on :8000
 ```
 
-**Before putting it on a public URL:** there is no authentication and no rate
-limiting, so anyone with the link can read the profile and spend your API
-credit. See [`docs/DEPLOY.md`](docs/DEPLOY.md) for the details and what has
-actually been tested.
+**Before putting it on a public URL,** set `APP_PASSWORD` and `SECRET_KEY` in
+`.env`. The password gate is off when `APP_PASSWORD` is empty, which keeps
+local development frictionless but leaves a deployment wide open. With it set,
+every `/api/*` route needs a session, and the AI routes are separately capped
+so nobody can burn your API credit. See [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## License
 
