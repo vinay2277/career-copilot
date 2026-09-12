@@ -1,18 +1,106 @@
 # Setup
 
-Verified on Windows 11, Python 3.13.5, Node 22.14.
+Verified end to end on a clean clone: Windows 11, Python 3.13.5, Node 22.14.
+
+## Quickstart
+
+Two terminals. Roughly two minutes, most of it `pip install`.
+
+**Before you clone, on Windows:** pick a short directory. The `openai` package
+ships filenames long enough to exceed Windows' 260-character path limit, and a
+deep clone path fails mid-install with a confusing `OSError: [Errno 2] No such
+file or directory`. `C:\dev\` is fine; a nested folder under `Documents` may
+not be. Or lift the limit once:
+
+```powershell
+git config --global core.longpaths true
+```
+
+```powershell
+git clone -b vinay_v1 https://github.com/vinay2277/career-copilot.git
+cd career-copilot
+```
+
+**Terminal 1 — backend**
+
+```powershell
+cd backend
+python -m venv venv
+.\venv\Scripts\activate                 # macOS/Linux: source venv/bin/activate
+pip install -r requirements.txt
+Copy-Item .env.example .env             # macOS/Linux: cp .env.example .env
+python -m uvicorn app.main:app --port 8000
+```
+
+**Terminal 2 — frontend**
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+Open **http://localhost:5173**.
+
+> Use `localhost`, not `127.0.0.1` — Vite binds to IPv6 only.
+
+The app starts with no API key and no database. It creates the SQLite schema on
+first run, and the whole scoring half works immediately. To see it with data:
+
+```powershell
+cd backend
+python scripts/seed_demo.py             # a profile and a six-job board
+```
+
+### Turning on the AI features
+
+Put a key in `backend/.env` and restart the backend — `.env` is read once at
+startup:
+
+```ini
+OPENAI_API_KEY=sk-proj-...
+```
+
+`http://localhost:8000/health` should then report `"ai_available": true`. Until
+it does, the AI pages warn up front and their endpoints return a 502 naming the
+variable to set, rather than failing obscurely.
+
+### Checks
+
+```powershell
+cd backend
+python -m pytest                        # 143 tests, no key and no network needed
+python -m ruff check app tests
+```
+
+```powershell
+cd frontend
+npm run typecheck
+```
 
 ## Prerequisites
 
 | Tool | Needed for |
 |---|---|
-| Python 3.11+ | Backend |
-| Node 18+ | Frontend |
-| An OpenAI **or** Anthropic API key | The agents |
-| [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) | Screenshot ingestion only |
+| Python 3.11+ | Backend. Uses `datetime.UTC` and `StrEnum`, so 3.10 will not do. |
+| Node 18+ | Frontend (Vite 6) |
+| An OpenAI **or** Anthropic API key | The agents only — optional |
+| [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) | Screenshot ingestion only — optional |
 
-Everything except the agents and OCR works without any credentials — scoring,
-the board, skill ROI, what-if, and analytics are pure computation.
+**Nothing but Python and Node is required to run the app.** Scoring, the board,
+skill ROI, what-if, and analytics are pure computation with no model call, and
+the test suite passes offline with no credentials.
+
+## If something goes wrong
+
+| Symptom | Cause |
+|---|---|
+| `pip install` dies on a long `openai` filename | Windows MAX_PATH. Clone to a shorter path, or `git config --global core.longpaths true`. |
+| `ai_available: false` after adding a key | `.env` is read at startup — restart the backend. |
+| Frontend loads, every API call fails | Backend isn't on :8000. Vite proxies `/api` there. |
+| `127.0.0.1:5173` refuses the connection | Vite binds IPv6 only. Use `localhost:5173`. |
+| `alembic upgrade head` says "table already exists" | The app provisioned the schema itself. It stamps the Alembic head when it does, so this only happens on a database created by an older build — delete `career_copilot.db` and re-run. |
+| Port 8000 busy after Ctrl-C | A `--reload` worker outlived its parent. Find it with `Get-NetTCPConnection -LocalPort 8000` and stop that PID. |
 
 ## Choosing a provider
 

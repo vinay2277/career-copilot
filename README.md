@@ -38,7 +38,35 @@ FastAPI backend (:8000)
 
 ## Getting started
 
-See [`docs/SETUP.md`](docs/SETUP.md) on the `vinay_v1` branch.
+Needs only Python 3.11+ and Node 18+. No API key required to run it — the whole
+scoring half is pure computation.
+
+```powershell
+git clone -b vinay_v1 https://github.com/vinay2277/career-copilot.git
+cd career-copilot
+
+# terminal 1 — backend
+cd backend
+python -m venv venv
+.\venv\Scripts\activate          # macOS/Linux: source venv/bin/activate
+pip install -r requirements.txt
+Copy-Item .env.example .env      # macOS/Linux: cp .env.example .env
+python -m uvicorn app.main:app --port 8000
+
+# terminal 2 — frontend
+cd frontend
+npm ci
+npm run dev
+```
+
+Then open http://localhost:5173 (use `localhost`, not `127.0.0.1` — Vite binds
+IPv6 only).
+
+On Windows, clone to a short path such as `C:\dev\` — the `openai` package has
+filenames that exceed the 260-character limit from a deeply nested directory.
+
+Full instructions, the AI-feature setup, and troubleshooting:
+[`docs/SETUP.md`](docs/SETUP.md).
 
 ## License
 
