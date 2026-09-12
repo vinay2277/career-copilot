@@ -37,10 +37,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(`${BASE}${path}`, {
       headers: init?.body instanceof FormData ? {} : { "Content-Type": "application/json" },
+      // Send the session cookie. Same-origin in production, and required
+      // explicitly when the dev server proxies from a different port.
+      credentials: "include",
       ...init,
     });
   } catch {
     throw new ApiError("Could not reach the backend. Is it running on :8000?", 0);
+  }
+
+  // A 401 anywhere means the session went away — expired, or the server
+  // restarted without a stable SECRET_KEY. Tell the shell so it can show the
+  // login screen, rather than surfacing "Not signed in" on whatever page the
+  // user happened to be looking at.
+  if (response.status === 401) {
+    window.dispatchEvent(new CustomEvent("career-copilot:unauthenticated"));
   }
 
   if (!response.ok) {
@@ -87,8 +98,19 @@ export interface Health {
   ai_note: string | null;
 }
 
+export interface AuthStatus {
+  /** False when no password is configured, i.e. the gate is off entirely. */
+  auth_required: boolean;
+  authenticated: boolean;
+}
+
 export const api = {
   health: () => request<Health>("/health"),
+
+  // --- Auth ---
+  authStatus: () => request<AuthStatus>("/api/auth/status"),
+  login: (password: string) => post<AuthStatus>("/api/auth/login", { password }),
+  logout: () => post<AuthStatus>("/api/auth/logout"),
 
   // --- Profile ---
   getProfile: () => request<Profile>("/api/profile"),

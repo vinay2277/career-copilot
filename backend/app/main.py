@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from app import models  # noqa: F401  (imported for its side effect, see below)
 
@@ -18,6 +21,7 @@ from app import models  # noqa: F401  (imported for its side effect, see below)
 # `app` and shadow the FastAPI instance defined below.
 from app.api.routes import (
     analytics,
+    auth,
     extract,
     interview,
     learning,
@@ -27,6 +31,7 @@ from app.api.routes import (
     simulation,
 )
 from app.core.config import settings
+from app.core.security import PROTECTED, startup_check
 from app.db.session import Base, engine
 
 logging.basicConfig(
@@ -68,6 +73,7 @@ def _bootstrap_schema() -> None:
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Provision the schema on a first run so a fresh clone just works."""
     _bootstrap_schema()
+    startup_check()
     yield
 
 
@@ -90,6 +96,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Signs the session cookie the password gate issues. A random per-process key
+# is a deliberate fallback rather than a hard failure: it keeps a local
+# checkout working with no configuration, at the cost of logging everyone out
+# on restart. startup_check() warns when that is happening.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.secret_key or secrets.token_urlsafe(32),
+    session_cookie="career_copilot_session",
+    max_age=settings.session_days * 86400,
+    same_site="lax",
+    https_only=settings.cookie_secure,
+)
+
+# Unauthenticated by necessity — this is where you sign in.
+app.include_router(auth.router)
+
+# Everything else sits behind the gate and the general rate limit. Applied here
+# rather than on each router so a new router cannot be added unprotected by
+# accident; the individually expensive routes carry an extra AI limit of their
+# own.
 for module in (
     profile,
     extract,
@@ -100,7 +126,49 @@ for module in (
     interview,
     learning,
 ):
-    app.include_router(module.router)
+    app.include_router(module.router, dependencies=PROTECTED)
+
+
+def _mount_frontend() -> None:
+    """Serve the built frontend from this app, when a build is present.
+
+    This is what makes the project deployable as one process on one port: no
+    separate static host, no CORS, no second service to keep in sync. In
+    development the build doesn't exist and Vite serves the frontend instead,
+    so this is a no-op and nothing changes.
+
+    Mounted last, after every API router, so `/api/...` and `/health` always
+    win over the catch-all below.
+    """
+    dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    if not (dist / "index.html").is_file():
+        logger.info("No frontend build at %s — serving API only.", dist)
+        return
+
+    # Hashed asset filenames are safe to cache hard; index.html must not be, or
+    # a redeploy leaves browsers holding a page that references deleted bundles.
+    app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+
+    index = (dist / "index.html").read_bytes()
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str) -> Response:
+        """Hand every unmatched path to the SPA so client-side routing works.
+
+        A hard refresh on /opportunities/9 is a real GET the server must answer;
+        without this it would 404. An unmatched /api path is excluded so a
+        mistyped endpoint returns a JSON 404 rather than the HTML shell, which
+        is far more confusing to debug.
+        """
+        if full_path.startswith("api/"):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No such endpoint.")
+        return Response(
+            content=index,
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    logger.info("Serving the frontend build from %s", dist)
 
 
 @app.get("/health", tags=["meta"])
@@ -120,3 +188,7 @@ def health() -> dict[str, object]:
         "ai_available": available,
         "ai_note": None if available else no_credentials(),
     }
+
+
+# Last, so the SPA catch-all cannot shadow a real route.
+_mount_frontend()

@@ -11,6 +11,7 @@ from app.agents.profile_extraction import extract_profile
 from app.agents.resume import analyze_resume, tailor_resume
 from app.api.deps import get_profile
 from app.core.config import settings
+from app.core.security import rate_limit_ai
 from app.db.session import get_db
 from app.models import Application, JobPost, Profile, Resume, TailoredResume
 from app.schemas import (
@@ -24,6 +25,9 @@ from app.services.profile_merge import merge_resume_into_profile
 from app.services.scoring import load_aliases, refresh_cached_score, score_job
 
 router = APIRouter(prefix="/api/resume", tags=["resume"])
+
+#: Routes that call a model. Listing and reading stored resumes do not.
+AI = [Depends(rate_limit_ai)]
 
 
 def _primary_resume(db: Session, profile: Profile) -> Resume:
@@ -55,7 +59,12 @@ def list_resumes(
     )
 
 
-@router.post("", response_model=ResumeUploadOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ResumeUploadOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=AI,
+)
 async def upload_resume(
     file: UploadFile = File(...),
     update_profile: bool = Query(
@@ -183,7 +192,9 @@ def _populate_profile(
     )
 
 
-@router.post("/{resume_id}/to-profile", response_model=ProfileUpdateOut)
+@router.post(
+    "/{resume_id}/to-profile", response_model=ProfileUpdateOut, dependencies=AI
+)
 def reapply_to_profile(
     resume_id: int,
     db: Session = Depends(get_db),
@@ -204,7 +215,7 @@ def reapply_to_profile(
     return result
 
 
-@router.post("/{resume_id}/reanalyze", response_model=ResumeOut)
+@router.post("/{resume_id}/reanalyze", response_model=ResumeOut, dependencies=AI)
 def reanalyze(
     resume_id: int,
     db: Session = Depends(get_db),
@@ -233,6 +244,7 @@ def reanalyze(
     "/tailor/{job_id}",
     response_model=TailoredResumeOut,
     status_code=status.HTTP_201_CREATED,
+    dependencies=AI,
 )
 def tailor_for_job(
     job_id: int,

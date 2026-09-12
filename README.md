@@ -68,6 +68,21 @@ filenames that exceed the 260-character limit from a deeply nested directory.
 Full instructions, the AI-feature setup, and troubleshooting:
 [`docs/SETUP.md`](docs/SETUP.md).
 
+## Deploying
+
+Builds to a single image that serves the API and the frontend on one port, so
+any Docker host works:
+
+```bash
+docker compose up --build     # app + PostgreSQL, on :8000
+```
+
+**Before putting it on a public URL,** set `APP_PASSWORD` and `SECRET_KEY` in
+`.env`. The password gate is off when `APP_PASSWORD` is empty, which keeps
+local development frictionless but leaves a deployment wide open. With it set,
+every `/api/*` route needs a session, and the AI routes are separately capped
+so nobody can burn your API credit. See [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
 ## License
 
 MIT

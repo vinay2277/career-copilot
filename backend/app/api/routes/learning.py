@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.agents.client import AgentError
 from app.agents.learning import build_roadmap
 from app.api.deps import get_profile
+from app.core.security import rate_limit_ai
 from app.db.session import get_db
 from app.models import LearningPath, LearningStep, Profile
 from app.schemas import LearningPathOut, RoadmapRequestIn
@@ -39,7 +40,10 @@ def list_paths(
 
 
 @router.post(
-    "/roadmap", response_model=LearningPathOut, status_code=status.HTTP_201_CREATED
+    "/roadmap",
+    response_model=LearningPathOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit_ai)],
 )
 def generate_roadmap(
     payload: RoadmapRequestIn,

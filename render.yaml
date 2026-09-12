@@ -1,0 +1,53 @@
+# Render blueprint. Point Render at this repo and it provisions everything
+# described here — see docs/DEPLOY.md for the walkthrough.
+#
+# Only OPENAI_API_KEY has to be typed in by hand; the rest is generated or
+# wired automatically.
+
+databases:
+  - name: career-copilot-db
+    databaseName: career_copilot
+    user: career
+    plan: free
+
+services:
+  - type: web
+    name: career-copilot
+    runtime: docker
+    plan: free
+    # The repo root, where the Dockerfile lives. It builds the frontend and
+    # serves it from the same process, so there is no second service.
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+
+    envVars:
+      # Supplied as postgres://..., which the app rewrites to the psycopg
+      # driver at startup.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: career-copilot-db
+          property: connectionString
+
+      # Generated once by Render and held stable across deploys — which is
+      # what sessions need. A rotating key logs everyone out on every deploy.
+      - key: SECRET_KEY
+        generateValue: true
+
+      # The password gate. Render generates one; read it from the service's
+      # Environment tab after the first deploy, or replace it with your own.
+      - key: APP_PASSWORD
+        generateValue: true
+
+      # Render terminates TLS, so the session cookie must be HTTPS-only.
+      - key: COOKIE_SECURE
+        value: "true"
+
+      - key: LLM_PROVIDER
+        value: openai
+      - key: OPENAI_MODEL
+        value: gpt-4o
+
+      # The one value you must enter yourself. sync:false means Render prompts
+      # for it rather than storing it in this file.
+      - key: OPENAI_API_KEY
+        sync: false

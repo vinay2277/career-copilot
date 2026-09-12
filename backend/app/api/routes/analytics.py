@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.agents.career_intelligence import recommend
 from app.agents.client import AgentError
 from app.api.deps import get_profile
+from app.core.security import rate_limit_ai
 from app.db.session import get_db
 from app.models import Application, Profile
 from app.schemas import FunnelOut, GuidanceOut, StageOut
@@ -73,7 +74,11 @@ def read_funnel(
     )
 
 
-@router.get("/action-center", response_model=GuidanceOut)
+@router.get(
+    "/action-center",
+    response_model=GuidanceOut,
+    dependencies=[Depends(rate_limit_ai)],
+)
 def action_center(
     db: Session = Depends(get_db),
     profile: Profile = Depends(get_profile),
