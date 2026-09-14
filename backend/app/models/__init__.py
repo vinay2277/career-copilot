@@ -29,6 +29,7 @@ from app.models.enums import (
     SourceKind,
 )
 from app.models.job import JobPost, JobRequirement, SkillAlias
+from app.models.posting import JobPosting, PostingApplication, PostingRequirement
 from app.models.profile import Preferences, Profile, ProfileSkill, Resume
 
 __all__ = [
@@ -43,11 +44,14 @@ __all__ = [
     "InterviewSession",
     "InterviewTurn",
     "JobPost",
+    "JobPosting",
     "JobRequirement",
     "LearningPath",
     "LearningStep",
     "Necessity",
     "Organization",
+    "PostingApplication",
+    "PostingRequirement",
     "PostingSource",
     "PostingStatus",
     "Preferences",

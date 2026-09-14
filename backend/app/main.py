@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import models  # noqa: F401  (imported for its side effect, see below)
-from app.api.deps import STUDENT_ONLY
+from app.api.deps import HR_ONLY, STUDENT_ONLY
 
 # `models` above is imported purely to populate `Base.metadata`. Without it the
 # lifespan's create_all would produce an empty schema. Imported as `from app
@@ -23,6 +23,8 @@ from app.api.deps import STUDENT_ONLY
 from app.api.routes import (
     analytics,
     auth,
+    board,
+    employer,
     extract,
     interview,
     learning,
@@ -163,8 +165,13 @@ for module in (
     resume,
     interview,
     learning,
+    board,
 ):
     app.include_router(module.router, dependencies=STUDENT_ONLY)
+
+# The recruiter-facing surface. Same reasoning, different role: the check sits
+# at the router so no handler can be reached by the wrong kind of account.
+app.include_router(employer.router, dependencies=HR_ONLY)
 
 
 def _mount_frontend() -> None:
