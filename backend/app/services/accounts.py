@@ -214,6 +214,100 @@ def _burn_time(password: str) -> None:
     verify_password(password, _DUMMY_HASH)
 
 
+def bootstrap_from_env(db: Session) -> None:
+    """Ensure the account named by BOOTSTRAP_ADMIN_* exists and can sign in.
+
+    Exists because a hosted deployment often has no shell. The migration adopts
+    a pre-existing profile onto an account with no usable password, and on a
+    platform where you cannot run `scripts/set_password.py` that would lock the
+    owner out of their own data permanently.
+
+    Idempotent, and deliberately narrow:
+
+    * If no account has that email, one is created with the given password and
+      linked to any orphaned profile.
+    * If one exists, only its password is reset — the role and everything it
+      owns are left alone.
+
+    Clear both variables once you are in. Leaving them set means the password
+    is reapplied on every restart, so changing it in the app would silently
+    revert at the next deploy.
+    """
+    from app.core.config import settings
+
+    email = settings.bootstrap_admin_email.strip()
+    password = settings.bootstrap_admin_password
+
+    if not email or not password:
+        return
+
+    normalized = normalize_email(email)
+    account = find_by_email(db, normalized)
+
+    try:
+        password_hash = hash_password(password)
+    except ValueError as e:
+        logger.error("BOOTSTRAP_ADMIN_PASSWORD rejected: %s", e)
+        return
+
+    if account is None:
+        # No account with that address. Before creating one, check for a single
+        # locked-out account — the migration's output when the original profile
+        # had no email on it, in which case the account is named
+        # `legacy-N@invalid` and owns all the real data. Creating a fresh
+        # account here would strand that data behind an address nobody knows.
+        #
+        # Narrow on purpose: exactly one account, and it must already be unable
+        # to sign in, so this can never take over a working account.
+        locked = (
+            db.execute(select(Account).where(Account.password_hash == "!"))
+            .scalars()
+            .all()
+        )
+        total = db.execute(select(func.count()).select_from(Account)).scalar_one()
+
+        if len(locked) == 1 and total == 1:
+            account = locked[0]
+            logger.warning(
+                "Claiming the locked account %s as %s — it was the only one and "
+                "could not sign in.",
+                account.email,
+                normalized,
+            )
+            account.email = normalized
+            account.password_hash = password_hash
+            account.is_active = True
+            db.commit()
+            return
+
+        account = Account(
+            email=normalized,
+            password_hash=password_hash,
+            role=Role.STUDENT,
+            full_name=email.partition("@")[0],
+        )
+        db.add(account)
+        db.flush()
+        db.add(
+            Profile(
+                account_id=account.id,
+                full_name=account.full_name,
+                email=normalized,
+            )
+        )
+        logger.warning("Created bootstrap account %s from the environment.", normalized)
+    else:
+        account.password_hash = password_hash
+        account.is_active = True
+        logger.warning(
+            "Reset the password for %s from BOOTSTRAP_ADMIN_PASSWORD. "
+            "Clear that variable once you have signed in.",
+            normalized,
+        )
+
+    db.commit()
+
+
 def account_count(db: Session, role: Role | None = None) -> int:
     stmt = select(func.count()).select_from(Account)
     if role is not None:

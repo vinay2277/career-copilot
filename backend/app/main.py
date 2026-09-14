@@ -75,7 +75,25 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Provision the schema on a first run so a fresh clone just works."""
     _bootstrap_schema()
     startup_check()
+    _bootstrap_account()
     yield
+
+
+def _bootstrap_account() -> None:
+    """Apply BOOTSTRAP_ADMIN_* if set. Never fatal.
+
+    A failure here must not stop the app booting: the variables are a recovery
+    mechanism, and an app that refuses to start because a recovery path failed
+    is worse than one you cannot yet sign in to.
+    """
+    from app.db.session import SessionLocal
+    from app.services.accounts import bootstrap_from_env
+
+    try:
+        with SessionLocal() as db:
+            bootstrap_from_env(db)
+    except Exception:
+        logger.exception("Bootstrap account setup failed; continuing.")
 
 
 app = FastAPI(

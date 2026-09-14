@@ -13,6 +13,7 @@ import type {
   Resume,
   ResumeUpload,
   Scenario,
+  SessionState,
   Simulation,
   SkillROI,
   TailoredResume,
@@ -98,19 +99,34 @@ export interface Health {
   ai_note: string | null;
 }
 
-export interface AuthStatus {
-  /** False when no password is configured, i.e. the gate is off entirely. */
-  auth_required: boolean;
-  authenticated: boolean;
-}
-
 export const api = {
   health: () => request<Health>("/health"),
 
   // --- Auth ---
-  authStatus: () => request<AuthStatus>("/api/auth/status"),
-  login: (password: string) => post<AuthStatus>("/api/auth/login", { password }),
-  logout: () => post<AuthStatus>("/api/auth/logout"),
+  session: () => request<SessionState>("/api/auth/session"),
+  login: (email: string, password: string) =>
+    post<SessionState>("/api/auth/login", { email, password }),
+  registerStudent: (email: string, password: string, full_name: string) =>
+    post<SessionState>("/api/auth/register/student", {
+      email,
+      password,
+      full_name,
+    }),
+  registerHr: (
+    email: string,
+    password: string,
+    full_name: string,
+    organization_name: string,
+  ) =>
+    post<SessionState>("/api/auth/register/hr", {
+      email,
+      password,
+      full_name,
+      organization_name,
+    }),
+  logout: () => post<SessionState>("/api/auth/logout"),
+  changePassword: (current_password: string, new_password: string) =>
+    post<SessionState>("/api/auth/password", { current_password, new_password }),
 
   // --- Profile ---
   getProfile: () => request<Profile>("/api/profile"),

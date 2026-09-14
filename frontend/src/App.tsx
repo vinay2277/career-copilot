@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import Login from "./Login";
 import { api } from "./api";
+import type { Account } from "./types";
 import ActionCenter from "./pages/ActionCenter";
 import AddJob from "./pages/AddJob";
 import Analytics from "./pages/Analytics";
@@ -38,52 +39,86 @@ const NAV = [
   },
 ];
 
-/**
- * Sign-out, rendered only when there is a gate to sign out of.
- *
- * Hidden entirely on an unprotected local instance, where a "sign out" that
- * does nothing would just be confusing.
- */
-function SignOut({ onDone }: { onDone: () => void }) {
-  const [required, setRequired] = useState(false);
-
-  useEffect(() => {
-    api
-      .authStatus()
-      .then((s) => setRequired(s.auth_required))
-      .catch(() => setRequired(false));
-  }, []);
-
-  if (!required) return null;
-
+/** Who you're signed in as, and the way out. */
+function AccountBar({
+  account,
+  onSignedOut,
+}: {
+  account: Account;
+  onSignedOut: () => void;
+}) {
   return (
-    <button
-      className="link sign-out"
-      onClick={async () => {
-        try {
-          await api.logout();
-        } finally {
-          onDone();
-        }
-      }}
-    >
-      Sign out
-    </button>
+    <div className="account-bar">
+      <div className="account-name">{account.full_name || account.email}</div>
+      {account.organization && (
+        <div className="muted small">
+          {account.organization.name}
+          {!account.organization.is_verified && " · awaiting verification"}
+        </div>
+      )}
+      <button
+        className="link sign-out"
+        onClick={async () => {
+          try {
+            await api.logout();
+          } finally {
+            onSignedOut();
+          }
+        }}
+      >
+        Sign out
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Placeholder for the recruiter side, which has no screens yet.
+ *
+ * Shown rather than dropping a recruiter into the student app, whose every
+ * route would 403 — a wall of permission errors reads as broken software, not
+ * as "this part isn't built".
+ */
+function RecruiterHome({ account }: { account: Account }) {
+  return (
+    <div className="empty" style={{ paddingTop: "4rem" }}>
+      <h3>Recruiter tools are still being built</h3>
+      <p>
+        You're signed in as {account.full_name || account.email}
+        {account.organization ? ` at ${account.organization.name}` : ""}.
+      </p>
+      {account.organization && !account.organization.is_verified && (
+        <p className="muted small">
+          Your company still needs verifying before it can post roles or see
+          candidates.
+        </p>
+      )}
+    </div>
   );
 }
 
 export default function App() {
-  const [gate, setGate] = useState<"checking" | "locked" | "open">("checking");
+  const [state, setState] = useState<"checking" | "signed-out" | "signed-in">(
+    "checking",
+  );
+  const [account, setAccount] = useState<Account | null>(null);
 
   const check = useCallback(async () => {
     try {
-      const status = await api.authStatus();
-      setGate(status.authenticated ? "open" : "locked");
+      const session = await api.session();
+      if (session.authenticated && session.account) {
+        setAccount(session.account);
+        setState("signed-in");
+      } else {
+        setAccount(null);
+        setState("signed-out");
+      }
     } catch {
-      // The gate can't be determined — usually the backend is down. Let the
-      // app render so its own error handling explains what's wrong, rather
-      // than showing a login screen for a server that isn't there.
-      setGate("open");
+      // Usually the backend is down. Show the sign-in screen rather than an
+      // app whose every request will fail — at least the error surfaces where
+      // someone is expecting to interact.
+      setAccount(null);
+      setState("signed-out");
     }
   }, []);
 
@@ -91,9 +126,13 @@ export default function App() {
     void check();
   }, [check]);
 
-  // Any 401 from any request means the session ended mid-use.
+  // Any 401 from any request means the session ended mid-use — expired, or the
+  // server restarted without a stable SECRET_KEY.
   useEffect(() => {
-    const onUnauthenticated = () => setGate("locked");
+    const onUnauthenticated = () => {
+      setAccount(null);
+      setState("signed-out");
+    };
     window.addEventListener("career-copilot:unauthenticated", onUnauthenticated);
     return () =>
       window.removeEventListener(
@@ -102,8 +141,40 @@ export default function App() {
       );
   }, []);
 
-  if (gate === "checking") return <div className="login-screen" />;
-  if (gate === "locked") return <Login onSuccess={() => setGate("open")} />;
+  if (state === "checking") return <div className="login-screen" />;
+
+  if (state === "signed-out" || !account) {
+    return (
+      <Login
+        onSuccess={(signedIn) => {
+          setAccount(signedIn);
+          setState("signed-in");
+        }}
+      />
+    );
+  }
+
+  const signOut = () => {
+    setAccount(null);
+    setState("signed-out");
+  };
+
+  if (account.role !== "student") {
+    return (
+      <div className="shell">
+        <aside className="sidebar">
+          <div className="brand">
+            Career Copilot
+            <small>Recruiter</small>
+          </div>
+          <AccountBar account={account} onSignedOut={signOut} />
+        </aside>
+        <main className="main">
+          <RecruiterHome account={account} />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="shell">
@@ -125,7 +196,7 @@ export default function App() {
           ))}
         </nav>
 
-        <SignOut onDone={() => setGate("locked")} />
+        <AccountBar account={account} onSignedOut={signOut} />
       </aside>
 
       <main className="main">

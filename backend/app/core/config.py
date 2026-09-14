@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     # public it should be true, or anyone can post a fake role and harvest
     # student contact details.
     require_org_verification: bool = True
+
+    # A hosted deployment often has no shell, and the multi-tenancy migration
+    # adopts a pre-existing profile onto an account with no usable password.
+    # Setting both of these at startup makes that account signable-in without
+    # one. Clear them once you are in — while set, the password is reapplied on
+    # every restart, so a change made in the app reverts at the next deploy.
+    bootstrap_admin_email: str = ""
+    bootstrap_admin_password: str = ""
     # Signs the session cookie. Must be stable across restarts or everyone is
     # logged out on every deploy; must be secret or the cookie is forgeable.
     secret_key: str = ""

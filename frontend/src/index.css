@@ -232,9 +232,21 @@ pre {
   margin-top: 1rem;
 }
 
+.account-bar {
+  margin-top: 1.4rem;
+  padding: 0.7rem 0.6rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.account-name {
+  font-size: 0.86rem;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
 .sign-out {
   display: block;
-  margin: 1.2rem 0 0 0.6rem;
+  margin-top: 0.5rem;
   font-size: 0.8rem;
 }
 

@@ -17,6 +17,28 @@ export type ApplicationStatus =
 
 export type InterviewKind = "behavioral" | "technical" | "system_design" | "screening";
 
+export type AccountRole = "student" | "hr" | "admin";
+
+export interface OrganizationSummary {
+  id: number;
+  name: string;
+  is_verified: boolean;
+}
+
+export interface Account {
+  id: number;
+  email: string;
+  full_name: string;
+  role: AccountRole;
+  /** Present for recruiters only. */
+  organization: OrganizationSummary | null;
+}
+
+export interface SessionState {
+  authenticated: boolean;
+  account: Account | null;
+}
+
 export interface Skill {
   id?: number;
   name: string;
