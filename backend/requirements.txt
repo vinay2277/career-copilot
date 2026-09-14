@@ -9,8 +9,13 @@ python-multipart==0.0.20
 # --- Data / validation ---
 pydantic==2.13.5
 pydantic-settings==2.15.0
+# Pydantic's EmailStr needs this and does not pull it in itself — without it,
+# importing the auth schemas fails at class-definition time.
+email-validator==2.3.0
 
-# --- Sessions ---
+# --- Authentication ---
+# Argon2id password hashing.
+argon2-cffi==25.1.0
 # Starlette's SessionMiddleware signs the cookie with this; it is an optional
 # dependency there, so it has to be requested explicitly.
 itsdangerous==2.2.0
