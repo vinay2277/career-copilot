@@ -1,5 +1,13 @@
 import type {
+  Board,
+  BoardEntry,
   ExtractionPreview,
+  MyApplication,
+  Posting,
+  PostingApplication,
+  PostingDraft,
+  PostingPayload,
+  PostingSummary,
   Funnel,
   Guidance,
   InterviewKind,
@@ -127,6 +135,42 @@ export const api = {
   logout: () => post<SessionState>("/api/auth/logout"),
   changePassword: (current_password: string, new_password: string) =>
     post<SessionState>("/api/auth/password", { current_password, new_password }),
+
+  // --- Student job board ---
+  board: (opts?: { minScore?: number; breakdown?: boolean }) => {
+    const q = new URLSearchParams();
+    if (opts?.minScore != null) q.set("min_score", String(opts.minScore));
+    if (opts?.breakdown) q.set("include_breakdown", "true");
+    const suffix = q.toString() ? `?${q}` : "";
+    return request<Board>(`/api/board${suffix}`);
+  },
+  posting: (id: number) => request<BoardEntry>(`/api/board/postings/${id}`),
+  apply: (id: number, cover_note?: string) =>
+    post<PostingApplication>(`/api/board/postings/${id}/apply`, {
+      cover_note: cover_note || null,
+    }),
+  myApplications: () => request<MyApplication[]>("/api/board/applications"),
+  withdraw: (applicationId: number) =>
+    request<void>(`/api/board/applications/${applicationId}`, {
+      method: "DELETE",
+    }),
+
+  // --- Recruiter postings ---
+  parseDescription: (text: string) =>
+    post<PostingDraft>("/api/employer/postings/parse", { text }),
+  createPosting: (payload: PostingPayload) =>
+    post<Posting>("/api/employer/postings", payload),
+  myPostings: () => request<PostingSummary[]>("/api/employer/postings"),
+  getPosting: (id: number) => request<PostingSummary>(`/api/employer/postings/${id}`),
+  updatePosting: (id: number, payload: PostingPayload) =>
+    request<Posting>(`/api/employer/postings/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  publishPosting: (id: number) => post<Posting>(`/api/employer/postings/${id}/publish`),
+  closePosting: (id: number) => post<Posting>(`/api/employer/postings/${id}/close`),
+  deletePosting: (id: number) =>
+    request<void>(`/api/employer/postings/${id}`, { method: "DELETE" }),
 
   // --- Profile ---
   getProfile: () => request<Profile>("/api/profile"),

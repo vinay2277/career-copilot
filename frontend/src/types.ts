@@ -39,6 +39,128 @@ export interface SessionState {
   account: Account | null;
 }
 
+// --------------------------------------------------------------------------
+// Published postings — the shared board, distinct from a student's own
+// tracked jobs in `Opportunity`.
+// --------------------------------------------------------------------------
+
+export type PostingSource = "employer" | "sourced";
+export type PostingStatus = "draft" | "open" | "closed";
+
+export interface PostingRequirement {
+  name: string;
+  necessity: Necessity;
+  min_years: number;
+  evidence: string | null;
+}
+
+export interface Posting {
+  id: number;
+  title: string;
+  company_name: string;
+  source: PostingSource;
+  status: PostingStatus;
+  location: string | null;
+  remote: boolean | null;
+  seniority: string | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  currency: string | null;
+  industry: string | null;
+  company_size: string | null;
+  description: string | null;
+  education: string | null;
+  certifications: string[];
+  total_years_experience: number | null;
+  source_url: string | null;
+  requirements: PostingRequirement[];
+  closes_at: string | null;
+  created_at: string;
+}
+
+export interface BoardEntry {
+  posting: Posting;
+  alignment: Alignment | null;
+  applied: boolean;
+  application_status: ApplicationStatus | null;
+}
+
+export interface Board {
+  from_employers: BoardEntry[];
+  sourced: BoardEntry[];
+}
+
+export interface PostingApplication {
+  id: number;
+  posting_id: number;
+  status: ApplicationStatus;
+  alignment_score: number | null;
+  alignment_detail: {
+    total: number;
+    requirements_fit: number;
+    preference_fit: number;
+    have: string[];
+    partial: string[];
+    missing: string[];
+  } | null;
+  cover_note: string | null;
+  applied_at: string;
+}
+
+export interface MyApplication {
+  application: PostingApplication;
+  posting: Posting;
+}
+
+/** What the extraction agent read out of a pasted description. */
+export interface PostingDraft {
+  title: string;
+  company_name: string | null;
+  description: string | null;
+  location: string | null;
+  remote: boolean | null;
+  seniority: string | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  currency: string | null;
+  industry: string | null;
+  company_size: string | null;
+  education: string | null;
+  certifications: string[];
+  total_years_experience: number | null;
+  requirements: PostingRequirement[];
+  raw_text: string;
+  confidence: number;
+  unverified_fields: string[];
+  validation_notes: string;
+}
+
+/** What gets sent to create or update a posting. */
+export interface PostingPayload {
+  title: string;
+  description?: string | null;
+  location?: string | null;
+  remote?: boolean | null;
+  seniority?: string | null;
+  salary_min?: number | null;
+  salary_max?: number | null;
+  currency?: string | null;
+  industry?: string | null;
+  company_size?: string | null;
+  education?: string | null;
+  certifications?: string[];
+  total_years_experience?: number | null;
+  closes_at?: string | null;
+  requirements: PostingRequirement[];
+  raw_text?: string;
+}
+
+export interface PostingSummary {
+  posting: Posting;
+  application_count: number;
+  is_accepting: boolean;
+}
+
 export interface Skill {
   id?: number;
   name: string;

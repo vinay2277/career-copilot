@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import Login from "./Login";
 import { api } from "./api";
 import type { Account } from "./types";
 import ActionCenter from "./pages/ActionCenter";
 import AddJob from "./pages/AddJob";
 import Analytics from "./pages/Analytics";
+import EmployerPostings from "./pages/EmployerPostings";
+import JobBoard from "./pages/JobBoard";
+import MyApplications from "./pages/MyApplications";
+import PostJob from "./pages/PostJob";
 import InterviewPrep from "./pages/InterviewPrep";
 import LearningRoadmap from "./pages/LearningRoadmap";
 import Opportunities from "./pages/Opportunities";
@@ -16,7 +20,14 @@ import SkillRoi from "./pages/SkillRoi";
 const NAV = [
   { group: "Set up", links: [{ to: "/profile", label: "Profile & resume" }] },
   {
-    group: "Pipeline",
+    group: "Open roles",
+    links: [
+      { to: "/jobs", label: "Job board" },
+      { to: "/applications", label: "My applications" },
+    ],
+  },
+  {
+    group: "My own finds",
     links: [
       { to: "/add", label: "Add a job" },
       { to: "/opportunities", label: "Opportunities" },
@@ -72,27 +83,64 @@ function AccountBar({
   );
 }
 
-/**
- * Placeholder for the recruiter side, which has no screens yet.
- *
- * Shown rather than dropping a recruiter into the student app, whose every
- * route would 403 — a wall of permission errors reads as broken software, not
- * as "this part isn't built".
- */
-function RecruiterHome({ account }: { account: Account }) {
+const RECRUITER_NAV = [
+  { to: "/roles", label: "Your roles" },
+  { to: "/post", label: "Post a role" },
+];
+
+/** The recruiter app. */
+function RecruiterShell({
+  account,
+  onSignedOut,
+}: {
+  account: Account;
+  onSignedOut: () => void;
+}) {
+  const navigate = useNavigate();
+  const unverified =
+    account.organization != null && !account.organization.is_verified;
+
   return (
-    <div className="empty" style={{ paddingTop: "4rem" }}>
-      <h3>Recruiter tools are still being built</h3>
-      <p>
-        You're signed in as {account.full_name || account.email}
-        {account.organization ? ` at ${account.organization.name}` : ""}.
-      </p>
-      {account.organization && !account.organization.is_verified && (
-        <p className="muted small">
-          Your company still needs verifying before it can post roles or see
-          candidates.
-        </p>
-      )}
+    <div className="shell">
+      <aside className="sidebar">
+        <div className="brand">
+          Career Copilot
+          <small>{account.organization?.name ?? "Recruiter"}</small>
+        </div>
+        <nav className="nav">
+          <div className="nav-section">
+            {RECRUITER_NAV.map((link) => (
+              <NavLink key={link.to} to={link.to}>
+                {link.label}
+              </NavLink>
+            ))}
+          </div>
+        </nav>
+        <AccountBar account={account} onSignedOut={onSignedOut} />
+      </aside>
+
+      <main className="main">
+        {unverified && (
+          <div className="note note-warn">
+            Your company is awaiting verification. You can draft roles, but
+            publishing and viewing candidates stay closed until it's approved —
+            it's what stops anyone posting a fake role to collect students'
+            contact details.
+          </div>
+        )}
+        <Routes>
+          <Route path="/" element={<Navigate to="/roles" replace />} />
+          <Route
+            path="/roles"
+            element={<EmployerPostings onPost={() => navigate("/post")} />}
+          />
+          <Route
+            path="/post"
+            element={<PostJob onPublished={() => navigate("/roles")} />}
+          />
+          <Route path="*" element={<Navigate to="/roles" replace />} />
+        </Routes>
+      </main>
     </div>
   );
 }
@@ -102,6 +150,24 @@ export default function App() {
     "checking",
   );
   const [account, setAccount] = useState<Account | null>(null);
+  const navigate = useNavigate();
+
+  /**
+   * Land on the role's own home after signing in.
+   *
+   * Without this you keep whoever was here before's URL: sign out of a
+   * recruiter account on /post, sign in as a student, and you get a 404,
+   * because /post is not a student route. The routes are role-specific, so the
+   * location has to be reset whenever the role might have changed.
+   */
+  const signedIn = useCallback(
+    (next: Account) => {
+      setAccount(next);
+      setState("signed-in");
+      navigate("/", { replace: true });
+    },
+    [navigate],
+  );
 
   const check = useCallback(async () => {
     try {
@@ -144,36 +210,19 @@ export default function App() {
   if (state === "checking") return <div className="login-screen" />;
 
   if (state === "signed-out" || !account) {
-    return (
-      <Login
-        onSuccess={(signedIn) => {
-          setAccount(signedIn);
-          setState("signed-in");
-        }}
-      />
-    );
+    return <Login onSuccess={signedIn} />;
   }
 
   const signOut = () => {
     setAccount(null);
     setState("signed-out");
+    // Clear the location too, so the next person to sign in doesn't inherit
+    // a route their role may not have.
+    navigate("/", { replace: true });
   };
 
   if (account.role !== "student") {
-    return (
-      <div className="shell">
-        <aside className="sidebar">
-          <div className="brand">
-            Career Copilot
-            <small>Recruiter</small>
-          </div>
-          <AccountBar account={account} onSignedOut={signOut} />
-        </aside>
-        <main className="main">
-          <RecruiterHome account={account} />
-        </main>
-      </div>
-    );
+    return <RecruiterShell account={account} onSignedOut={signOut} />;
   }
 
   return (
@@ -201,8 +250,10 @@ export default function App() {
 
       <main className="main">
         <Routes>
-          <Route path="/" element={<Navigate to="/opportunities" replace />} />
+          <Route path="/" element={<Navigate to="/jobs" replace />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/jobs" element={<JobBoard />} />
+          <Route path="/applications" element={<MyApplications />} />
           <Route path="/add" element={<AddJob />} />
           <Route path="/opportunities" element={<Opportunities />} />
           <Route path="/opportunities/:jobId" element={<Opportunities />} />
