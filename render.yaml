@@ -33,13 +33,14 @@ services:
       - key: SECRET_KEY
         generateValue: true
 
-      # The password gate. Render generates one; read it from the service's
-      # Environment tab after the first deploy, or replace it with your own.
-      - key: APP_PASSWORD
-        generateValue: true
-
       # Render terminates TLS, so the session cookie must be HTTPS-only.
       - key: COOKIE_SECURE
+        value: "true"
+
+      # A recruiter cannot post a role or see a candidate until an
+      # administrator approves their organization. Off would mean anyone who
+      # registers can post a fake role and collect students' contact details.
+      - key: REQUIRE_ORG_VERIFICATION
         value: "true"
 
       - key: LLM_PROVIDER

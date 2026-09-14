@@ -161,6 +161,30 @@ export interface PostingSummary {
   is_accepting: boolean;
 }
 
+// --------------------------------------------------------------------------
+// Administration
+// --------------------------------------------------------------------------
+
+export interface AdminOrganization {
+  id: number;
+  name: string;
+  domain: string | null;
+  website: string | null;
+  is_verified: boolean;
+  created_at: string;
+  member_count: number;
+  posting_count: number;
+  member_emails: string[];
+}
+
+export interface AdminStats {
+  organizations: number;
+  awaiting_verification: number;
+  students: number;
+  recruiters: number;
+  open_postings: number;
+}
+
 export interface Skill {
   id?: number;
   name: string;

@@ -280,22 +280,41 @@ def bootstrap_from_env(db: Session) -> None:
             db.commit()
             return
 
+        try:
+            role = Role(settings.bootstrap_admin_role.strip().lower())
+        except ValueError:
+            logger.error(
+                "BOOTSTRAP_ADMIN_ROLE %r is not a role; using student.",
+                settings.bootstrap_admin_role,
+            )
+            role = Role.STUDENT
+
         account = Account(
             email=normalized,
             password_hash=password_hash,
-            role=Role.STUDENT,
+            role=role,
             full_name=email.partition("@")[0],
         )
         db.add(account)
         db.flush()
-        db.add(
-            Profile(
-                account_id=account.id,
-                full_name=account.full_name,
-                email=normalized,
+
+        # Only a student has a profile. An administrator approving companies
+        # has no board, no résumé and no skills — giving them one would put an
+        # empty profile in every count on the platform.
+        if role is Role.STUDENT:
+            db.add(
+                Profile(
+                    account_id=account.id,
+                    full_name=account.full_name,
+                    email=normalized,
+                )
             )
+
+        logger.warning(
+            "Created bootstrap account %s (%s) from the environment.",
+            normalized,
+            role.value,
         )
-        logger.warning("Created bootstrap account %s from the environment.", normalized)
     else:
         account.password_hash = password_hash
         account.is_active = True

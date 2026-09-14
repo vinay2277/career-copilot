@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -21,6 +21,7 @@ from app.api.deps import HR_ONLY, STUDENT_ONLY
 # import models` rather than `import app.models`, which would bind the name
 # `app` and shadow the FastAPI instance defined below.
 from app.api.routes import (
+    admin,
     analytics,
     auth,
     board,
@@ -34,7 +35,7 @@ from app.api.routes import (
     simulation,
 )
 from app.core.config import settings
-from app.core.security import startup_check
+from app.core.security import rate_limit_api, startup_check
 from app.db.session import Base, engine
 
 logging.basicConfig(
@@ -172,6 +173,11 @@ for module in (
 # The recruiter-facing surface. Same reasoning, different role: the check sits
 # at the router so no handler can be reached by the wrong kind of account.
 app.include_router(employer.router, dependencies=HR_ONLY)
+
+# Administration. `require_admin` is on each route rather than the router,
+# because these are few enough that an explicit check per handler reads better
+# than an inherited one — and this is the surface that grants access.
+app.include_router(admin.router, dependencies=[Depends(rate_limit_api)])
 
 
 def _mount_frontend() -> None:

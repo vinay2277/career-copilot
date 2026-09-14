@@ -67,11 +67,9 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
 
     # --- Access control ---
-    # Empty disables the gate entirely, which is what makes local development
-    # frictionless. Set it for anything reachable from outside your machine:
-    # without it, whoever has the URL can read the résumé and spend the API key.
-    # Legacy single-user gate. Superseded by real accounts and kept only so an
-    # existing deployment doesn't break on upgrade; unused once accounts exist.
+    # Legacy single shared password, superseded by real accounts. Read but
+    # never used: it stays declared only so an existing deployment that still
+    # sets APP_PASSWORD starts rather than failing on an unexpected variable.
     app_password: str = ""
 
     # Whether an organization must be verified before it can post roles or view
@@ -87,6 +85,12 @@ class Settings(BaseSettings):
     # every restart, so a change made in the app reverts at the next deploy.
     bootstrap_admin_email: str = ""
     bootstrap_admin_password: str = ""
+    # Role given to an account the bootstrap *creates*. Defaults to student so
+    # an existing deployment's behaviour does not change underneath it. Set to
+    # "admin" with a fresh email address to make yourself an administrator who
+    # can approve organizations; an account that already exists keeps whatever
+    # role it has, so this can never silently promote or demote anyone.
+    bootstrap_admin_role: str = "student"
     # Signs the session cookie. Must be stable across restarts or everyone is
     # logged out on every deploy; must be secret or the cookie is forgeable.
     secret_key: str = ""
@@ -100,12 +104,9 @@ class Settings(BaseSettings):
     # tighter budget than ordinary reads.
     rate_limit_ai_per_hour: int = 40
     rate_limit_api_per_minute: int = 120
-    # Brute-forcing one shared password is the obvious attack on this design.
+    # Password guessing. Keyed by IP rather than by account — keying it by
+    # account would let an attacker register and reset their own budget.
     rate_limit_login_per_hour: int = 10
-
-    @property
-    def auth_enabled(self) -> bool:
-        return bool(self.app_password)
 
     # --- Ingestion ---
     tesseract_cmd: str = ""

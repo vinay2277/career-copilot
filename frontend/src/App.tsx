@@ -5,6 +5,7 @@ import { api } from "./api";
 import type { Account } from "./types";
 import ActionCenter from "./pages/ActionCenter";
 import AddJob from "./pages/AddJob";
+import AdminOrganizations from "./pages/AdminOrganizations";
 import Analytics from "./pages/Analytics";
 import EmployerPostings from "./pages/EmployerPostings";
 import JobBoard from "./pages/JobBoard";
@@ -122,10 +123,11 @@ function RecruiterShell({
       <main className="main">
         {unverified && (
           <div className="note note-warn">
-            Your company is awaiting verification. You can draft roles, but
-            publishing and viewing candidates stay closed until it's approved —
-            it's what stops anyone posting a fake role to collect students'
-            contact details.
+            <strong>{account.organization?.name}</strong> is awaiting approval.
+            Posting roles and viewing candidates stay closed until an
+            administrator approves it — it's what stops anyone posting a fake
+            role to collect students' contact details. Nothing else is needed
+            from you; you'll be able to post as soon as it's approved.
           </div>
         )}
         <Routes>
@@ -139,6 +141,46 @@ function RecruiterShell({
             element={<PostJob onPublished={() => navigate("/roles")} />}
           />
           <Route path="*" element={<Navigate to="/roles" replace />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
+
+/**
+ * The administrator's app.
+ *
+ * Separate from the recruiter shell because an admin belongs to no
+ * organization: every recruiter route would 409 on them. One screen for now —
+ * approving the companies allowed to recruit here.
+ */
+function AdminShell({
+  account,
+  onSignedOut,
+}: {
+  account: Account;
+  onSignedOut: () => void;
+}) {
+  return (
+    <div className="shell">
+      <aside className="sidebar">
+        <div className="brand">
+          Career Copilot
+          <small>Administration</small>
+        </div>
+        <nav className="nav">
+          <div className="nav-section">
+            <NavLink to="/organizations">Organizations</NavLink>
+          </div>
+        </nav>
+        <AccountBar account={account} onSignedOut={onSignedOut} />
+      </aside>
+
+      <main className="main">
+        <Routes>
+          <Route path="/" element={<Navigate to="/organizations" replace />} />
+          <Route path="/organizations" element={<AdminOrganizations />} />
+          <Route path="*" element={<Navigate to="/organizations" replace />} />
         </Routes>
       </main>
     </div>
@@ -221,7 +263,11 @@ export default function App() {
     navigate("/", { replace: true });
   };
 
-  if (account.role !== "student") {
+  if (account.role === "admin") {
+    return <AdminShell account={account} onSignedOut={signOut} />;
+  }
+
+  if (account.role === "hr") {
     return <RecruiterShell account={account} onSignedOut={signOut} />;
   }
 

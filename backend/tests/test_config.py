@@ -53,9 +53,15 @@ def test_llm_model_follows_the_provider(provider):
     )
 
 
-def test_auth_is_off_when_no_password_is_set():
-    assert Settings(app_password="").auth_enabled is False
-    assert Settings(app_password="x").auth_enabled is True
+def test_the_legacy_password_is_accepted_and_ignored():
+    """A deployment that still sets APP_PASSWORD must start, not crash.
+
+    Accounts replaced the single shared password. The setting is kept purely so
+    an existing environment doesn't fail on an unexpected variable, and nothing
+    reads it — the assertion that matters is that it grants nothing.
+    """
+    assert Settings(app_password="still-set-somewhere").app_password
+    assert not hasattr(Settings(), "auth_enabled")
 
 
 def test_cors_origins_parse_to_a_list():

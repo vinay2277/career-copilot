@@ -1,4 +1,6 @@
 import type {
+  AdminOrganization,
+  AdminStats,
   Board,
   BoardEntry,
   ExtractionPreview,
@@ -171,6 +173,17 @@ export const api = {
   closePosting: (id: number) => post<Posting>(`/api/employer/postings/${id}/close`),
   deletePosting: (id: number) =>
     request<void>(`/api/employer/postings/${id}`, { method: "DELETE" }),
+
+  // --- Administration ---
+  adminStats: () => request<AdminStats>("/api/admin/stats"),
+  adminOrganizations: (pendingOnly = false) =>
+    request<AdminOrganization[]>(
+      `/api/admin/organizations${pendingOnly ? "?pending_only=true" : ""}`,
+    ),
+  verifyOrganization: (id: number) =>
+    post<AdminOrganization>(`/api/admin/organizations/${id}/verify`),
+  unverifyOrganization: (id: number) =>
+    post<AdminOrganization>(`/api/admin/organizations/${id}/unverify`),
 
   // --- Profile ---
   getProfile: () => request<Profile>("/api/profile"),

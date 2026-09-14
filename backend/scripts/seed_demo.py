@@ -6,6 +6,10 @@ two ingestion agents stay out of the path.
 
     python scripts/seed_demo.py                 # against localhost:8000
     python scripts/seed_demo.py --base http://localhost:8000
+    python scripts/seed_demo.py --email me@example.com --password ...
+
+It registers a demo student (or signs in, if that account already exists) and
+seeds against it: the data belongs to an account, so it has to own one.
 
 To start over, stop the server and delete `career_copilot.db`.
 """
@@ -13,6 +17,7 @@ To start over, stop the server and delete `career_copilot.db`.
 from __future__ import annotations
 
 import argparse
+import http.cookiejar
 import json
 import sys
 import urllib.error
@@ -204,8 +209,16 @@ JOBS = [
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="http://localhost:8000")
+    parser.add_argument("--email", default="demo@example.com")
+    parser.add_argument("--password", default="demo-password-123")
     args = parser.parse_args()
     base = args.base.rstrip("/")
+
+    # Every /api route needs a session now, so the seeded data has to belong to
+    # an account. urllib drops cookies unless an opener holds a jar.
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+    )
 
     def call(method: str, path: str, body: object | None = None):
         data = json.dumps(body).encode() if body is not None else None
@@ -215,7 +228,7 @@ def main() -> int:
             method=method,
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with opener.open(req, timeout=30) as r:
             return json.loads(r.read() or "null")
 
     try:
@@ -223,6 +236,17 @@ def main() -> int:
     except (urllib.error.URLError, TimeoutError) as e:
         print(f"Cannot reach {base} — is the backend running?\n  {e}", file=sys.stderr)
         return 1
+
+    credentials = {"email": args.email, "password": args.password}
+    try:
+        call("POST", "/api/auth/register/student", {**credentials, "full_name": "Demo"})
+        print(f"registered {args.email}")
+    except urllib.error.HTTPError as e:
+        # 409 means it already exists, which is the normal case on a re-run.
+        if e.code != 409:
+            raise
+        call("POST", "/api/auth/login", credentials)
+        print(f"signed in as {args.email}")
 
     profile = call("PUT", "/api/profile", PROFILE)
     print(f"profile: {profile['full_name']}, {len(profile['skills'])} skills")
