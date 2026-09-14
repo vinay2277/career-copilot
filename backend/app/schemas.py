@@ -60,6 +60,12 @@ class ProfileIn(BaseModel):
     headline: str | None = None
     years_experience: float = Field(default=0.0, ge=0, le=60)
     career_goal: str | None = None
+    location: str | None = None
+    phone: str | None = None
+    open_to_work: bool = True
+    #: None leaves the current setting alone. Consenting to appear in recruiter
+    #: searches is a deliberate act, not something a profile save toggles.
+    visible_to_recruiters: bool | None = None
     skills: list[SkillIn] = Field(default_factory=list)
     preferences: PreferencesIn | None = None
 
@@ -72,6 +78,10 @@ class ProfileOut(BaseModel):
     headline: str | None
     years_experience: float
     career_goal: str | None
+    location: str | None
+    phone: str | None
+    open_to_work: bool
+    visible_to_recruiters: bool
     skills: list[SkillOut]
     preferences: PreferencesOut | None
 

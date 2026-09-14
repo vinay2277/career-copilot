@@ -1,29 +1,21 @@
-"""Password gate and rate-limit dependencies.
+"""Rate limiting.
 
-One shared password, held in the environment, exchanged for a signed session
-cookie. Deliberately not a user system: this is one person's tool, and the gate
-exists to stop strangers reading the résumé and spending the API key, not to
-model identity.
-
-Leaving `APP_PASSWORD` empty disables the whole thing, which keeps local
-development frictionless. Anything reachable from outside the machine must set
-it.
+Authentication moved to real accounts — see `app/api/deps.py` for the
+authorization dependencies and `app/services/accounts.py` for sign-in. What
+stays here is throttling, which is independent of who the caller is and has to
+work before they are identified.
 """
 
 from __future__ import annotations
 
 import logging
-import secrets
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import HTTPException, Request, status
 
 from app.core.config import settings
 from app.core.ratelimit import SlidingWindowLimiter
 
 logger = logging.getLogger(__name__)
-
-#: Marks a session as having passed the gate.
-SESSION_KEY = "authenticated"
 
 
 # --------------------------------------------------------------------------- #
@@ -35,29 +27,50 @@ api_limiter = SlidingWindowLimiter(settings.rate_limit_api_per_minute, 60)
 login_limiter = SlidingWindowLimiter(settings.rate_limit_login_per_hour, 3600)
 
 
-def client_key(request: Request) -> str:
-    """Identify the caller for rate-limiting purposes.
+def ip_key(request: Request) -> str:
+    """The caller's network address.
 
     Behind a reverse proxy the socket address is the proxy, so the leftmost
-    X-Forwarded-For entry is used when present — that is the hop the proxy
-    itself recorded. It is client-controllable and therefore spoofable, which
-    is acceptable here: the limiter protects a budget, it is not an access
-    control, and the password gate is what actually guards the data.
+    X-Forwarded-For entry is used when present. It is client-controllable and
+    therefore spoofable, which is acceptable here: the limiter protects a
+    budget, it is not an access control, and authentication is what guards the
+    data.
     """
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+        return f"ip:{forwarded.split(',')[0].strip()}"
+    return f"ip:{request.client.host if request.client else 'unknown'}"
 
 
-def _enforce(limiter: SlidingWindowLimiter, request: Request, what: str) -> None:
-    decision = limiter.check(client_key(request))
+def client_key(request: Request) -> str:
+    """Identify the caller for throughput limits on authenticated routes.
+
+    Keyed by account when there is one, so a shared office NAT doesn't put
+    every recruiter on a single budget.
+
+    **Not for sign-in or registration.** Those must key by address — see
+    `ip_key`. Registration signs the caller in, so an account-keyed budget
+    would hand every newly created account a fresh allowance and leave
+    registration itself effectively unlimited.
+    """
+    account_id = request.session.get("account_id")
+    if account_id is not None:
+        return f"account:{account_id}"
+    return ip_key(request)
+
+
+def _enforce(
+    limiter: SlidingWindowLimiter,
+    request: Request,
+    what: str,
+    key_fn=client_key,
+) -> None:
+    key = key_fn(request)
+    decision = limiter.check(key)
     if decision.allowed:
         return
 
-    logger.warning(
-        "rate limit hit: %s by %s (limit %d)", what, client_key(request), decision.limit
-    )
+    logger.warning("rate limit hit: %s by %s (limit %d)", what, key, decision.limit)
     raise HTTPException(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         detail=(
@@ -66,27 +79,6 @@ def _enforce(limiter: SlidingWindowLimiter, request: Request, what: str) -> None
         ),
         headers={"Retry-After": str(decision.retry_after)},
     )
-
-
-# --------------------------------------------------------------------------- #
-# Dependencies
-# --------------------------------------------------------------------------- #
-
-
-def require_auth(request: Request) -> None:
-    """Reject anything without a valid session, when the gate is on.
-
-    Applied to every API router. With no password configured this is a no-op,
-    so a local checkout behaves exactly as before.
-    """
-    if not settings.auth_enabled:
-        return
-
-    if not request.session.get(SESSION_KEY):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not signed in.",
-        )
 
 
 def rate_limit_api(request: Request) -> None:
@@ -104,57 +96,39 @@ def rate_limit_ai(request: Request) -> None:
 
 
 def rate_limit_login(request: Request) -> None:
-    """Throttle sign-in attempts.
+    """Throttle sign-in and registration, keyed by address.
 
-    Guessing one shared password is the obvious attack on this design, and it
-    is the only one a rate limit meaningfully prevents.
+    Credential stuffing is the attack this prevents, and registration is
+    included because an unthrottled sign-up endpoint is how a platform acquires
+    ten thousand fake students overnight.
+
+    Keyed by `ip_key` rather than `client_key`, deliberately: registration
+    signs the caller in, so an account-keyed budget would reset on every new
+    account and cap nothing at all.
     """
-    _enforce(login_limiter, request, "sign-in")
-
-
-#: Convenience bundles for `APIRouter(dependencies=...)`.
-PROTECTED = [Depends(require_auth), Depends(rate_limit_api)]
-PROTECTED_AI = [Depends(require_auth), Depends(rate_limit_api), Depends(rate_limit_ai)]
-
-
-# --------------------------------------------------------------------------- #
-# Password check
-# --------------------------------------------------------------------------- #
-
-
-def verify_password(candidate: str) -> bool:
-    """Constant-time comparison against the configured password.
-
-    `compare_digest` rather than `==` so the time taken doesn't leak how much
-    of the password was correct.
-    """
-    if not settings.auth_enabled:
-        return True
-    return secrets.compare_digest(candidate.encode(), settings.app_password.encode())
+    _enforce(login_limiter, request, "sign-in", key_fn=ip_key)
 
 
 def startup_check() -> None:
-    """Warn loudly about a configuration that is unsafe to expose.
+    """Warn about configuration that is unsafe to expose.
 
     Not fatal: refusing to boot would break every local checkout, which is the
-    overwhelmingly common case. The log line is aimed at whoever is looking at
-    a deployment that is already running.
+    common case. These lines are aimed at whoever is looking at a deployment
+    that is already running.
     """
-    if not settings.auth_enabled:
-        logger.warning(
-            "APP_PASSWORD is not set — the API is open to anyone who can reach "
-            "it. Fine on localhost; set it before exposing this."
-        )
-        return
-
     if not settings.secret_key:
         logger.warning(
             "SECRET_KEY is not set, so a random one is generated per process. "
-            "Sessions will not survive a restart, and will not be shared "
-            "between workers. Set it in .env."
+            "Everyone is signed out on every restart, and workers will not "
+            "share sessions. Set it in .env."
         )
     if not settings.cookie_secure:
         logger.warning(
             "COOKIE_SECURE is false — the session cookie will travel over "
             "plain HTTP. Set it true when serving over HTTPS."
+        )
+    if not settings.require_org_verification:
+        logger.warning(
+            "REQUIRE_ORG_VERIFICATION is false — any recruiter who registers "
+            "can post roles and view student contact details without review."
         )

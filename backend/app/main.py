@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import models  # noqa: F401  (imported for its side effect, see below)
+from app.api.deps import STUDENT_ONLY
 
 # `models` above is imported purely to populate `Base.metadata`. Without it the
 # lifespan's create_all would produce an empty schema. Imported as `from app
@@ -31,7 +32,7 @@ from app.api.routes import (
     simulation,
 )
 from app.core.config import settings
-from app.core.security import PROTECTED, startup_check
+from app.core.security import startup_check
 from app.db.session import Base, engine
 
 logging.basicConfig(
@@ -109,13 +110,14 @@ app.add_middleware(
     https_only=settings.cookie_secure,
 )
 
-# Unauthenticated by necessity — this is where you sign in.
+# Unauthenticated by necessity — this is where you register and sign in.
 app.include_router(auth.router)
 
-# Everything else sits behind the gate and the general rate limit. Applied here
-# rather than on each router so a new router cannot be added unprotected by
-# accident; the individually expensive routes carry an extra AI limit of their
-# own.
+# The student-facing surface. Every one of these routes reads or writes data
+# owned by the signed-in student, so the role check is applied at the router
+# rather than repeated in each handler — a route added later cannot arrive
+# unprotected by accident. Individually expensive routes carry an extra AI
+# limit of their own.
 for module in (
     profile,
     extract,
@@ -126,7 +128,7 @@ for module in (
     interview,
     learning,
 ):
-    app.include_router(module.router, dependencies=PROTECTED)
+    app.include_router(module.router, dependencies=STUDENT_ONLY)
 
 
 def _mount_frontend() -> None:
@@ -187,6 +189,15 @@ def health() -> dict[str, object]:
         "model": settings.llm_model,
         "ai_available": available,
         "ai_note": None if available else no_credentials(),
+    }
+
+
+@app.get("/api/meta/config", tags=["meta"])
+def public_config() -> dict[str, object]:
+    """Settings the sign-in screen needs before anyone is authenticated."""
+    return {
+        "ai_available": True,
+        "org_verification_required": settings.require_org_verification,
     }
 
 

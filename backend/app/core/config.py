@@ -70,7 +70,15 @@ class Settings(BaseSettings):
     # Empty disables the gate entirely, which is what makes local development
     # frictionless. Set it for anything reachable from outside your machine:
     # without it, whoever has the URL can read the résumé and spend the API key.
+    # Legacy single-user gate. Superseded by real accounts and kept only so an
+    # existing deployment doesn't break on upgrade; unused once accounts exist.
     app_password: str = ""
+
+    # Whether an organization must be verified before it can post roles or view
+    # candidates. False is for a pilot where you know every recruiter; anywhere
+    # public it should be true, or anyone can post a fake role and harvest
+    # student contact details.
+    require_org_verification: bool = True
     # Signs the session cookie. Must be stable across restarts or everyone is
     # logged out on every deploy; must be secret or the cookie is forgeable.
     secret_key: str = ""

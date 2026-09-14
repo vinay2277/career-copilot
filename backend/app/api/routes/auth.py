@@ -1,77 +1,235 @@
-"""`/api/auth/*` — the password gate.
+"""`/api/auth/*` — registration and sign-in.
 
-Deliberately outside the `require_auth` dependency, for the obvious reason, but
-still rate-limited: this is the one endpoint an attacker can usefully hammer.
+Outside the authenticated dependency for the obvious reason, but rate-limited:
+these are the endpoints an attacker can usefully hammer.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from sqlalchemy.orm import Session
 
-from app.core.config import settings
-from app.core.security import (
-    SESSION_KEY,
-    rate_limit_login,
+from app.api.deps import SESSION_ACCOUNT, get_current_account, get_optional_account
+from app.core.passwords import (
+    MIN_PASSWORD_LENGTH,
+    PasswordError,
+    hash_password,
     verify_password,
 )
+from app.core.security import rate_limit_login
+from app.db.session import get_db
+from app.models import Account, Role
+from app.services import accounts as account_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+LOGIN_LIMIT = [Depends(rate_limit_login)]
+
+
+# --------------------------------------------------------------------------- #
+# Schemas
+# --------------------------------------------------------------------------- #
+
+
+class StudentRegisterIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
+    full_name: str = Field(min_length=1, max_length=200)
+
+
+class HRRegisterIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
+    full_name: str = Field(min_length=1, max_length=200)
+    organization_name: str = Field(min_length=1, max_length=200)
+    title: str | None = Field(default=None, max_length=200)
+
 
 class LoginIn(BaseModel):
-    password: str = Field(min_length=1)
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=256)
 
 
-class AuthStatusOut(BaseModel):
-    #: False when no password is configured, i.e. the gate is off entirely.
-    auth_required: bool
+class PasswordChangeIn(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
+
+
+class OrganizationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    is_verified: bool
+
+
+class AccountOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    email: str
+    full_name: str
+    role: Role
+    organization: OrganizationOut | None = None
+
+
+class SessionOut(BaseModel):
     authenticated: bool
+    account: AccountOut | None = None
 
 
-@router.get("/status", response_model=AuthStatusOut)
-def auth_status(request: Request) -> AuthStatusOut:
-    """Whether a gate exists and whether this caller is through it.
+# --------------------------------------------------------------------------- #
+# Helpers
+# --------------------------------------------------------------------------- #
 
-    The frontend calls this on load to decide between the login screen and the
-    app. Unauthenticated by design — it reveals only that a password exists.
-    """
-    return AuthStatusOut(
-        auth_required=settings.auth_enabled,
-        authenticated=not settings.auth_enabled
-        or bool(request.session.get(SESSION_KEY)),
+
+def _to_account_out(account: Account) -> AccountOut:
+    organization = None
+    if account.hr_membership is not None:
+        organization = OrganizationOut.model_validate(
+            account.hr_membership.organization
+        )
+    return AccountOut(
+        id=account.id,
+        email=account.email,
+        full_name=account.full_name,
+        role=account.role,
+        organization=organization,
     )
+
+
+def _sign_in(request: Request, account: Account) -> SessionOut:
+    """Establish the session.
+
+    Cleared before writing so no state from a previous session survives, which
+    is also the session-fixation defence — Starlette re-signs the cookie
+    whenever the session dict changes.
+    """
+    request.session.clear()
+    request.session[SESSION_ACCOUNT] = account.id
+    return SessionOut(authenticated=True, account=_to_account_out(account))
+
+
+# --------------------------------------------------------------------------- #
+# Routes
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/session", response_model=SessionOut)
+def read_session(
+    account: Account | None = Depends(get_optional_account),
+) -> SessionOut:
+    """Who is signed in, if anyone.
+
+    Unauthenticated by design — the frontend calls it on load to choose between
+    the sign-in screen and the app, and it reveals nothing to a stranger.
+    """
+    if account is None:
+        return SessionOut(authenticated=False)
+    return SessionOut(authenticated=True, account=_to_account_out(account))
 
 
 @router.post(
-    "/login",
-    response_model=AuthStatusOut,
-    dependencies=[Depends(rate_limit_login)],
+    "/register/student",
+    response_model=SessionOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=LOGIN_LIMIT,
 )
-def login(payload: LoginIn, request: Request) -> AuthStatusOut:
-    """Exchange the password for a session cookie."""
-    if not settings.auth_enabled:
-        # Nothing to sign in to. Reported plainly rather than pretending to
-        # succeed, so a misconfigured deployment is visible.
-        return AuthStatusOut(auth_required=False, authenticated=True)
+def register_student(
+    payload: StudentRegisterIn, request: Request, db: Session = Depends(get_db)
+) -> SessionOut:
+    """Create a student account and sign in."""
+    try:
+        account = account_service.register_student(
+            db,
+            email=payload.email,
+            password=payload.password,
+            full_name=payload.full_name,
+        )
+    except (account_service.RegistrationError, PasswordError) as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
 
-    if not verify_password(payload.password):
+    return _sign_in(request, account)
+
+
+@router.post(
+    "/register/hr",
+    response_model=SessionOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=LOGIN_LIMIT,
+)
+def register_hr(
+    payload: HRRegisterIn, request: Request, db: Session = Depends(get_db)
+) -> SessionOut:
+    """Create a recruiter account and attach it to an organization.
+
+    Registration succeeds immediately; posting roles does not. The organization
+    starts unverified, and `require_verified_organization` is what gates the
+    actions that could harm students.
+    """
+    try:
+        account = account_service.register_hr(
+            db,
+            email=payload.email,
+            password=payload.password,
+            full_name=payload.full_name,
+            organization_name=payload.organization_name,
+            title=payload.title,
+        )
+    except (account_service.RegistrationError, PasswordError) as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+
+    return _sign_in(request, account)
+
+
+@router.post("/login", response_model=SessionOut, dependencies=LOGIN_LIMIT)
+def login(
+    payload: LoginIn, request: Request, db: Session = Depends(get_db)
+) -> SessionOut:
+    """Sign in.
+
+    One message for every failure — wrong password, no such account, suspended.
+    Distinguishing them tells whoever is guessing which addresses are
+    registered, which is the first half of a credential-stuffing attack.
+    """
+    account = account_service.authenticate(
+        db, email=payload.email, password=payload.password
+    )
+    if account is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect password.",
+            status.HTTP_401_UNAUTHORIZED, "Incorrect email or password."
+        )
+    return _sign_in(request, account)
+
+
+@router.post("/logout", response_model=SessionOut)
+def logout(request: Request) -> SessionOut:
+    request.session.clear()
+    return SessionOut(authenticated=False)
+
+
+@router.post("/password", response_model=SessionOut)
+def change_password(
+    payload: PasswordChangeIn,
+    request: Request,
+    account: Account = Depends(get_current_account),
+    db: Session = Depends(get_db),
+) -> SessionOut:
+    """Change the signed-in account's password.
+
+    The current password is required even though the caller is already
+    authenticated — otherwise an unattended logged-in browser is enough for
+    someone to lock the owner out of their own account.
+    """
+    if not verify_password(payload.current_password, account.password_hash):
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Current password is incorrect."
         )
 
-    # Starlette regenerates the signed cookie whenever the session dict is
-    # written, so this is also the session-fixation defence.
-    request.session[SESSION_KEY] = True
-    return AuthStatusOut(auth_required=True, authenticated=True)
+    try:
+        account.password_hash = hash_password(payload.new_password)
+    except PasswordError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
 
-
-@router.post("/logout", response_model=AuthStatusOut)
-def logout(request: Request) -> AuthStatusOut:
-    """Clear the session."""
-    request.session.clear()
-    return AuthStatusOut(
-        auth_required=settings.auth_enabled,
-        authenticated=not settings.auth_enabled,
-    )
+    db.commit()
+    # Re-establish the session so the cookie is re-signed after the change.
+    return _sign_in(request, account)

@@ -1,13 +1,13 @@
-"""A brand-new instance has to be usable.
+"""A newly registered student has to be able to use everything immediately.
 
-Regression: every route depended on a profile row existing, and returned 404
-with "create one at PUT /api/profile" when it didn't. That made a fresh deploy
-completely unusable — including the résumé upload, the one action that would
-have created the profile. A new user was told to go and do the thing they were
-already trying to do.
+Regression, from before accounts existed: every route depended on a profile row
+being there, and returned 404 when it wasn't. A fresh deployment was therefore
+unusable — including the résumé upload, the one action that would have created
+the profile. A new user was told to go and do the thing they were already
+trying to do.
 
-Caught only after deploying, because local development always had a profile
-from the seed script.
+Registration now creates the profile, so this file guards the property rather
+than the old mechanism: sign up, and nothing 404s.
 """
 
 from __future__ import annotations
@@ -15,43 +15,28 @@ from __future__ import annotations
 import io
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
 
-from app.api.deps import CURRENT_PROFILE_ID
-from app.db.session import Base, get_db
-from app.main import app
-from app.models import Profile
+from app.models import Account, Profile
+from tests.conftest import register_student
 
 
 @pytest.fixture
-def fresh(tmp_path):
-    """A client against a database with the schema but no rows at all."""
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'fresh.db'}",
-        connect_args={"check_same_thread": False},
-    )
-    Base.metadata.create_all(bind=engine)
-    Session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-
-    def override():
-        db = Session()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[get_db] = override
-    yield TestClient(app), Session
-    app.dependency_overrides.clear()
+def fresh(api, db_session):
+    """A just-registered student against an otherwise empty database."""
+    register_student(api)
+    return api, db_session
 
 
-def test_no_profile_row_exists_to_begin_with(fresh):
-    _, Session = fresh
-    db = Session()
-    assert db.execute(select(Profile)).scalars().all() == []
-    db.close()
+def test_registration_creates_exactly_one_profile(fresh):
+    _, db_session = fresh
+    with db_session() as db:
+        accounts = db.execute(select(Account)).scalars().all()
+        profiles = db.execute(select(Profile)).scalars().all()
+
+    assert len(accounts) == 1
+    assert len(profiles) == 1
+    assert profiles[0].account_id == accounts[0].id
 
 
 @pytest.mark.parametrize(
@@ -66,61 +51,49 @@ def test_no_profile_row_exists_to_begin_with(fresh):
         "/api/learning",
     ],
 )
-def test_every_read_works_on_a_fresh_instance(fresh, path):
+def test_every_read_works_immediately_after_signing_up(fresh, path):
     client, _ = fresh
     assert client.get(path).status_code == 200
 
 
-def test_the_profile_is_created_on_first_touch(fresh):
-    client, Session = fresh
-    client.get("/api/profile")
-
-    db = Session()
-    profile = db.execute(select(Profile)).scalar_one()
-    assert profile.id == CURRENT_PROFILE_ID
-    db.close()
+def test_the_board_starts_empty_rather_than_erroring(fresh):
+    client, _ = fresh
+    assert client.get("/api/opportunities").json() == []
+    assert client.get("/api/skill-roi").json() == []
+    assert client.get("/api/analytics/funnel").json()["total"] == 0
 
 
-def test_only_one_profile_is_ever_created(fresh):
-    """Repeated requests must not pile up rows."""
-    client, Session = fresh
-    for _ in range(5):
-        client.get("/api/profile")
-        client.get("/api/opportunities")
-
-    db = Session()
-    assert len(db.execute(select(Profile)).scalars().all()) == 1
-    db.close()
-
-
-def test_resume_upload_works_before_any_profile_is_saved(fresh):
+def test_resume_upload_works_with_nothing_saved_yet(fresh):
     """The bug in one line: this is the first thing a new user does."""
     client, _ = fresh
-    files = {"file": ("cv.txt", io.BytesIO(b"Experienced engineer. " * 40), "text/plain")}
+    files = {
+        "file": ("cv.txt", io.BytesIO(b"Experienced engineer. " * 40), "text/plain")
+    }
 
     response = client.post("/api/resume?update_profile=false", files=files)
 
-    # 201 on success, or 502 if no model credentials — either proves it got
+    # 201 on success, or 502 with no model credentials — either proves it got
     # past the profile dependency, which is what this is about.
     assert response.status_code != 404
     assert response.status_code in (201, 502)
 
 
-def test_the_empty_profile_is_blank_not_fabricated(fresh):
-    """Created to exist, not to invent a name."""
+def test_the_profile_is_seeded_from_the_signup_form(fresh):
+    """Created to exist and carry what registration knew — not to invent."""
     client, _ = fresh
     profile = client.get("/api/profile").json()
 
-    assert profile["full_name"] == ""
+    assert profile["full_name"] == "Test Student"
+    assert profile["email"] == "student@example.com"
     assert profile["skills"] == []
     assert profile["headline"] is None
     assert profile["years_experience"] == 0
+    assert profile["visible_to_recruiters"] is False
 
 
-def test_saving_a_profile_updates_rather_than_duplicates(fresh):
-    """The auto-created row must be the one PUT writes to."""
-    client, Session = fresh
-    client.get("/api/profile")  # forces creation
+def test_saving_updates_rather_than_duplicates(fresh):
+    """The profile registration made must be the one PUT writes to."""
+    client, db_session = fresh
 
     response = client.put(
         "/api/profile",
@@ -134,6 +107,5 @@ def test_saving_a_profile_updates_rather_than_duplicates(fresh):
     assert response.status_code == 200
     assert response.json()["full_name"] == "Vinay"
 
-    db = Session()
-    assert len(db.execute(select(Profile)).scalars().all()) == 1
-    db.close()
+    with db_session() as db:
+        assert len(db.execute(select(Profile)).scalars().all()) == 1

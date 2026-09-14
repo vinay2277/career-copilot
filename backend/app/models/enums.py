@@ -81,6 +81,36 @@ class RecommendationKind(StrEnum):
     DROP = "drop"
 
 
+class Role(StrEnum):
+    """What an account is allowed to do.
+
+    Checked by a dependency on every route rather than inferred from which
+    tables a request touches — an authorization rule you have to reconstruct
+    from query shapes is one nobody can audit.
+    """
+
+    STUDENT = "student"
+    HR = "hr"
+    ADMIN = "admin"
+
+
+class PostingSource(StrEnum):
+    """Where a job posting came from.
+
+    Students see these as two sections: roles an employer posted here, and
+    roles the ingestion pipeline found elsewhere. Same table, same scoring.
+    """
+
+    EMPLOYER = "employer"
+    SOURCED = "sourced"
+
+
+class PostingStatus(StrEnum):
+    DRAFT = "draft"
+    OPEN = "open"
+    CLOSED = "closed"
+
+
 class InterviewKind(StrEnum):
     BEHAVIORAL = "behavioral"
     TECHNICAL = "technical"

@@ -8,36 +8,17 @@ ingestion — persistence, scoring, the board, ROI, the funnel — is covered.
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from app.api.deps import CURRENT_PROFILE_ID
-from app.db.session import Base, get_db
-from app.main import app
 
 
 @pytest.fixture
-def client(tmp_path):
-    """A client bound to a fresh SQLite file per test."""
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'test.db'}",
-        connect_args={"check_same_thread": False},
-    )
-    Base.metadata.create_all(bind=engine)
-    TestingSession = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+def client(student):
+    """Signed in as a student.
 
-    def override_get_db():
-        db = TestingSession()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
+    Every route exercised in this file is student-owned, so the authenticated
+    client is what `client` means here. Overriding the name keeps the tests
+    below unchanged from before accounts existed.
+    """
+    return student
 
 
 def make_profile(client, skills=None, **prefs):
@@ -117,19 +98,25 @@ def test_health(client):
 
 
 def test_reading_the_profile_before_saving_one_works(client):
-    """It used to 404 here, which made every route on a fresh instance fail —
-    including the résumé upload that would have created the profile. The
-    profile is a singleton, so it is created on first touch instead.
+    """A newly registered student has a usable profile immediately.
+
+    This used to 404, which made every route fail on a fresh instance. Now
+    registration creates the profile and seeds it from the sign-up form, so
+    the name is already there before anything is saved.
     See tests/test_fresh_instance.py."""
     response = client.get("/api/profile")
     assert response.status_code == 200
-    assert response.json()["full_name"] == ""
+    assert response.json()["full_name"] == "Test Student"
+    assert response.json()["skills"] == []
 
 
 def test_profile_round_trip(client):
     created = make_profile(client)
-    assert created["id"] == CURRENT_PROFILE_ID
     assert created["full_name"] == "Test Candidate"
+
+    # The id is the student's own profile, whatever it happens to be — no
+    # fixed singleton to compare against now that accounts exist.
+    assert created["id"] == client.get("/api/profile").json()["id"]
 
     fetched = client.get("/api/profile").json()
     assert [s["name"] for s in fetched["skills"]] == ["python"]

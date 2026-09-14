@@ -71,10 +71,16 @@ def test_unknown_api_paths_return_json_not_html(client):
 
 
 def test_api_routes_still_reach_their_handlers(client):
-    """404 here is the profile dependency talking, not the catch-all."""
+    """401 here is the auth dependency talking, not the catch-all.
+
+    The distinction that matters is JSON versus the HTML shell: any JSON
+    response proves the request reached the API router. Swallowed by the
+    catch-all it would have been a 200 of `index.html`.
+    """
     response = client.get("/api/profile")
     assert response.headers["content-type"].startswith("application/json")
-    assert response.status_code in (200, 404)
+    assert response.status_code == 401
+    assert "<div" not in response.text
 
 
 def test_assets_are_served(client):
