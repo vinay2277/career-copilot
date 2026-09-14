@@ -136,9 +136,18 @@ to `postgresql+psycopg://` at startup. Paste the provider's URL as-is.
 ephemeral filesystems — a SQLite file inside the container is wiped on every
 redeploy.
 
-The schema provisions itself on first boot against an empty database and stamps
-the Alembic head, so no migration step is needed for a fresh deploy. For an
-existing database, run `alembic upgrade head` as a release command.
+**Migrations run at startup.** An empty database is created and stamped; an
+existing one is upgraded to head. No release command, and nothing to remember.
+
+This is deliberate rather than tidy. An earlier version created the schema only
+when the database was empty and left existing ones to "a release command" —
+which was never wired up, so a deploy shipped new code against an old schema.
+The app booted, served pages, and 500'd on `no such table: accounts` the moment
+anyone signed up. Booting into a broken state is worse than refusing to boot.
+
+One assumption comes with it: **a single instance**. Two processes migrating
+concurrently can deadlock or double-apply. If you scale out, move this to a
+pre-deploy command that runs once.
 
 ## What has actually been verified
 

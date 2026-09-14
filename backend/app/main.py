@@ -43,31 +43,49 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _alembic_config():
+    from alembic.config import Config
+
+    cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    cfg.set_main_option("sqlalchemy.url", settings.database_url)
+    return cfg
+
+
 def _bootstrap_schema() -> None:
-    """Create the schema on a first run, and hand it to Alembic afterwards.
+    """Bring the database up to the code's schema, however far behind it is.
 
-    Naively calling `create_all` on every startup puts the database in a state
-    Alembic cannot manage: the tables exist but no revision is stamped, so the
-    next `alembic upgrade head` dies on "table already exists". So this runs
-    only against a genuinely empty database, and stamps the current head
-    immediately afterwards — leaving Alembic correctly in sync either way.
+    Two paths:
 
-    A database that already has tables is left strictly alone. Migrations are
-    the only thing that may alter an existing schema.
+    * **Empty database** — `create_all`, then stamp the head. Faster than
+      replaying every migration, and stamping is what keeps Alembic able to
+      manage it afterwards; without that, the next upgrade dies on "table
+      already exists".
+    * **Existing database** — `alembic upgrade head`. Idempotent, so a database
+      already at head is a no-op.
+
+    The second branch used to return early, leaving migrations to "a release
+    command" that was never wired up. The result was a deploy that shipped new
+    code against an old schema: the app started, served pages, and 500'd on
+    `no such table: accounts` the moment anyone tried to register. An app that
+    boots into a broken state is worse than one that refuses to boot, so this
+    now runs the migration itself.
+
+    **Single-instance assumption.** Two processes migrating at once can
+    deadlock or double-apply. Fine for one Render instance; scaling out means
+    moving this to a pre-deploy command that runs once.
     """
     from alembic import command
-    from alembic.config import Config
     from sqlalchemy import inspect
 
-    if inspect(engine).get_table_names():
-        return  # already provisioned; `alembic upgrade head` owns it from here
+    if not inspect(engine).get_table_names():
+        logger.info("Empty database — creating the schema and stamping it.")
+        Base.metadata.create_all(bind=engine)
+        command.stamp(_alembic_config(), "head")
+        return
 
-    logger.info("Empty database — creating the schema and stamping it.")
-    Base.metadata.create_all(bind=engine)
-
-    alembic_cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
-    alembic_cfg.set_main_option("sqlalchemy.url", settings.database_url)
-    command.stamp(alembic_cfg, "head")
+    logger.info("Existing database — running migrations up to head.")
+    command.upgrade(_alembic_config(), "head")
+    logger.info("Schema is up to date.")
 
 
 @asynccontextmanager
