@@ -204,6 +204,11 @@ Tested on this machine:
   on posting and on the AI parse route; after an administrator approves them
   both open; withdrawing approval closes them again while leaving published
   roles on the board and students' applications intact.
+- **The two consent rules, which are separate.** A student who applied to a
+  role appears on that employer's applicant list and is absent from candidate
+  search; a student who switched on `visible_to_recruiters` is searchable and
+  disappears again the moment they switch it off. The strongest candidate in
+  the test database is deliberately opted out, and no search returns them.
 - The single-process setup, end to end: deep links (`/opportunities/9`) serve
   the SPA shell, `/api/*` reaches its handlers, a mistyped `/api` path returns
   JSON rather than the HTML shell, hashed assets serve, `index.html` is sent

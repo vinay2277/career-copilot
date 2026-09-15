@@ -251,3 +251,54 @@ class ApplicationDecisionIn(BaseModel):
     """
 
     status: ApplicationStatus
+
+
+# --------------------------------------------------------------------------- #
+# Candidate search
+# --------------------------------------------------------------------------- #
+
+
+class CandidateSearchIn(BaseModel):
+    """What a recruiter is looking for.
+
+    Every field is optional. An empty search answers "who is here and open to
+    work?", which is a real question a recruiter asks on their first visit.
+    """
+
+    skills: list[str] = Field(default_factory=list, max_length=20)
+    min_years: float | None = Field(default=None, ge=0, le=60)
+    location: str | None = Field(default=None, max_length=200)
+    remote_only: bool = False
+    open_to_work_only: bool = True
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+class CandidateSearchRowOut(BaseModel):
+    """One searchable candidate.
+
+    Contact details appear because this person switched on
+    `visible_to_recruiters`, which says in as many words that recruiters can
+    find and contact them. Nothing else puts anybody in this list.
+    """
+
+    profile_id: int
+    full_name: str
+    email: str | None
+    headline: str | None
+    location: str | None
+    years_experience: float
+    open_to_work: bool
+
+    #: None when the search named no skills — there is nothing to score.
+    score: float | None
+    have: list[str]
+    partial: list[str]
+    missing: list[str]
+    skills: list[str]
+
+
+class CandidateSearchOut(BaseModel):
+    results: list[CandidateSearchRowOut]
+    #: How many opted-in profiles exist at all, so an empty result can say
+    #: whether the search was too narrow or nobody has opted in yet.
+    searchable_total: int

@@ -159,6 +159,9 @@ export default function ProfilePage() {
   const [newProf, setNewProf] = useState<Proficiency>("working");
   const [newYears, setNewYears] = useState(1);
   const [profileUpdate, setProfileUpdate] = useState<ProfileUpdate | null>(null);
+  const [location, setLocation] = useState("");
+  const [openToWork, setOpenToWork] = useState(true);
+  const [visible, setVisible] = useState(false);
 
   // Hydrate the form once the profile arrives. A 404 (no profile yet) leaves
   // the blank form in place, which is the correct first-run state.
@@ -172,6 +175,9 @@ export default function ProfilePage() {
     setGoal(p.career_goal ?? "");
     setSkills(p.skills);
     setPrefs(p.preferences ?? EMPTY_PREFS);
+    setLocation(p.location ?? "");
+    setOpenToWork(p.open_to_work);
+    setVisible(p.visible_to_recruiters);
   }, [profile.data]);
 
   const addSkill = () => {
@@ -192,6 +198,9 @@ export default function ProfilePage() {
         headline: headline || null,
         years_experience: years,
         career_goal: goal || null,
+        location: location || null,
+        open_to_work: openToWork,
+        visible_to_recruiters: visible,
         skills,
         preferences: prefs,
       }),
@@ -406,6 +415,63 @@ export default function ProfilePage() {
               Remote is acceptable
             </label>
           </div>
+        </Card>
+
+        <Card title="Who can find you">
+          <label>
+            Where you are
+            <input
+              value={location}
+              placeholder="Bengaluru"
+              onChange={(e) => setLocation(e.target.value)}
+            />
+          </label>
+
+          <div className="checkbox">
+            <input
+              id="open-to-work"
+              type="checkbox"
+              checked={openToWork}
+              onChange={(e) => setOpenToWork(e.target.checked)}
+            />
+            <label htmlFor="open-to-work" style={{ margin: 0 }}>
+              I'm currently looking
+            </label>
+          </div>
+
+          <div className="checkbox">
+            <input
+              id="visible"
+              type="checkbox"
+              checked={visible}
+              onChange={(e) => setVisible(e.target.checked)}
+            />
+            <label htmlFor="visible" style={{ margin: 0 }}>
+              Let verified employers find me in candidate searches
+            </label>
+          </div>
+
+          {/* Stated plainly and before the fact, because this is the one
+              setting on the page that shows a stranger your details. */}
+          <p className="muted small">
+            {visible ? (
+              <>
+                <strong>On.</strong> Employers whose company has been approved
+                can search for your skills and see your name, headline,
+                location, experience and email address. They cannot see your
+                resume, your saved jobs, or anything you have applied to
+                elsewhere. Switch it off and you disappear from those searches
+                straight away.
+              </>
+            ) : (
+              <>
+                <strong>Off.</strong> Nobody can search for you. Uploading a
+                resume and applying to roles do not change this — applying
+                shows your details to that one employer, for that one role.
+                Turn this on only if you want to be approached.
+              </>
+            )}
+          </p>
         </Card>
 
         <Card

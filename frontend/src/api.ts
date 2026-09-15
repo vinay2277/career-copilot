@@ -4,6 +4,9 @@ import type {
   Board,
   Candidate,
   CandidateList,
+  CandidateSearchQuery,
+  CandidateSearchResult,
+  ProfilePayload,
   BoardEntry,
   ExtractionPreview,
   MyApplication,
@@ -191,6 +194,8 @@ export const api = {
    */
   candidatesCsvUrl: (postingId: number) =>
     `${BASE}/api/employer/postings/${postingId}/applications.csv`,
+  searchCandidates: (query: CandidateSearchQuery) =>
+    post<CandidateSearchResult>("/api/employer/candidates/search", query),
 
   // --- Administration ---
   adminStats: () => request<AdminStats>("/api/admin/stats"),
@@ -205,7 +210,7 @@ export const api = {
 
   // --- Profile ---
   getProfile: () => request<Profile>("/api/profile"),
-  saveProfile: (payload: Omit<Profile, "id">) =>
+  saveProfile: (payload: ProfilePayload) =>
     request<Profile>("/api/profile", {
       method: "PUT",
       body: JSON.stringify(payload),

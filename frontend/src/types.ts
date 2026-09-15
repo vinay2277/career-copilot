@@ -241,8 +241,69 @@ export interface Profile {
   headline: string | null;
   years_experience: number;
   career_goal: string | null;
+  location: string | null;
+  phone: string | null;
+  open_to_work: boolean;
+  /** Whether recruiters may find this profile in a candidate search. */
+  visible_to_recruiters: boolean;
   skills: Skill[];
   preferences: Preferences | null;
+}
+
+/**
+ * What gets sent on save.
+ *
+ * `visible_to_recruiters` is optional and omitting it leaves the stored value
+ * alone — the backend treats consent as a deliberate act, not something an
+ * unrelated profile edit can flip.
+ */
+export interface ProfilePayload {
+  full_name: string;
+  email: string | null;
+  headline: string | null;
+  years_experience: number;
+  career_goal: string | null;
+  location?: string | null;
+  phone?: string | null;
+  open_to_work?: boolean;
+  visible_to_recruiters?: boolean;
+  skills: Skill[];
+  preferences: Preferences | null;
+}
+
+// --------------------------------------------------------------------------
+// Candidate search
+// --------------------------------------------------------------------------
+
+export interface CandidateSearchQuery {
+  skills?: string[];
+  min_years?: number | null;
+  location?: string | null;
+  remote_only?: boolean;
+  open_to_work_only?: boolean;
+  limit?: number;
+}
+
+export interface CandidateSearchRow {
+  profile_id: number;
+  full_name: string;
+  email: string | null;
+  headline: string | null;
+  location: string | null;
+  years_experience: number;
+  open_to_work: boolean;
+  /** Null when the search named no skills — nothing to score against. */
+  score: number | null;
+  have: string[];
+  partial: string[];
+  missing: string[];
+  skills: string[];
+}
+
+export interface CandidateSearchResult {
+  results: CandidateSearchRow[];
+  /** How many profiles are opted in at all, so empty can explain itself. */
+  searchable_total: number;
 }
 
 export interface Requirement {

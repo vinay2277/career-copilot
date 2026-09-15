@@ -15,6 +15,7 @@ import AddJob from "./pages/AddJob";
 import AdminOrganizations from "./pages/AdminOrganizations";
 import Analytics from "./pages/Analytics";
 import EmployerCandidates from "./pages/EmployerCandidates";
+import FindCandidates from "./pages/FindCandidates";
 import EmployerPostings from "./pages/EmployerPostings";
 import JobBoard from "./pages/JobBoard";
 import MyApplications from "./pages/MyApplications";
@@ -103,6 +104,7 @@ function CandidatesRoute({ onBack }: { onBack: () => void }) {
 const RECRUITER_NAV = [
   { to: "/roles", label: "Your roles" },
   { to: "/post", label: "Post a role" },
+  { to: "/find", label: "Find candidates" },
 ];
 
 /** The recruiter app. */
@@ -165,6 +167,7 @@ function RecruiterShell({
             path="/post"
             element={<PostJob onPublished={() => navigate("/roles")} />}
           />
+          <Route path="/find" element={<FindCandidates />} />
           <Route path="*" element={<Navigate to="/roles" replace />} />
         </Routes>
       </main>

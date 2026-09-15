@@ -41,6 +41,9 @@ from app.schemas_posting import (
     ApplicationDecisionIn,
     CandidateListOut,
     CandidateOut,
+    CandidateSearchIn,
+    CandidateSearchOut,
+    CandidateSearchRowOut,
     PostingDraftIn,
     PostingDraftOut,
     PostingOut,
@@ -51,6 +54,7 @@ from app.schemas_posting import (
 from app.services.ingestion import parsers
 from app.services.ingestion.pipeline import ingest
 from app.services.postings import requirements_from_extraction
+from app.services.search import CandidateQuery, search_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -344,6 +348,76 @@ def close_posting(
     db.commit()
     db.refresh(posting)
     return posting
+
+
+# --------------------------------------------------------------------------- #
+# Candidate search
+# --------------------------------------------------------------------------- #
+
+
+@router.post("/candidates/search", response_model=CandidateSearchOut)
+def search(
+    payload: CandidateSearchIn,
+    db: Session = Depends(get_db),
+    organization: Organization = Depends(require_verified_organization),
+) -> CandidateSearchOut:
+    """Find candidates by skill among those who opted in.
+
+    POST rather than GET because the query is a structured object with a list
+    in it, and threading that through a query string would mean inventing an
+    encoding for it. Nothing here mutates.
+
+    `searchable_total` is returned so an empty result can tell the recruiter
+    which kind of empty it is: a search too narrow, or a platform where nobody
+    has opted into being found yet. Those need opposite responses and look
+    identical without it.
+    """
+    matches = search_candidates(
+        db,
+        CandidateQuery(
+            skills=payload.skills,
+            min_years=payload.min_years,
+            location=payload.location,
+            remote_only=payload.remote_only,
+            open_to_work_only=payload.open_to_work_only,
+            limit=payload.limit,
+        ),
+    )
+
+    searchable_total = db.execute(
+        select(func.count())
+        .select_from(Profile)
+        .where(Profile.visible_to_recruiters.is_(True))
+    ).scalar_one()
+
+    logger.info(
+        "org %s searched candidates (%s skills) — %s of %s searchable matched",
+        organization.id,
+        len(payload.skills),
+        len(matches),
+        searchable_total,
+    )
+
+    return CandidateSearchOut(
+        results=[
+            CandidateSearchRowOut(
+                profile_id=m.profile.id,
+                full_name=m.profile.full_name,
+                email=m.profile.email,
+                headline=m.profile.headline,
+                location=m.profile.location,
+                years_experience=m.profile.years_experience,
+                open_to_work=m.profile.open_to_work,
+                score=m.score,
+                have=m.have,
+                partial=m.partial,
+                missing=m.missing,
+                skills=sorted(s.name for s in m.profile.skills),
+            )
+            for m in matches
+        ],
+        searchable_total=searchable_total,
+    )
 
 
 # --------------------------------------------------------------------------- #
