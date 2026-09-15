@@ -192,3 +192,62 @@ class PostingSummaryOut(BaseModel):
     posting: PostingOut
     application_count: int
     is_accepting: bool
+
+
+class CandidateOut(BaseModel):
+    """One applicant, as the recruiter who posted the role sees them.
+
+    Applying is what puts a student here — nobody appears in this list without
+    having chosen to apply to this specific role, which is also what makes the
+    contact details fair to show. The separate `visible_to_recruiters` flag
+    governs candidate *search*, a different act entirely, and has no bearing
+    here.
+
+    The score and its breakdown are the ones frozen at the moment of applying,
+    never recomputed. Two reasons: a ranking that reorders itself as people
+    edit their profiles is not a ranking anyone can act on, and a recruiter
+    must always be able to see exactly what a number was derived from.
+    """
+
+    application_id: int
+    status: ApplicationStatus
+    applied_at: datetime
+    cover_note: str | None
+
+    full_name: str
+    email: str | None
+    phone: str | None
+    headline: str | None
+    location: str | None
+    years_experience: float
+
+    #: None when the student applied with an empty profile; the row still
+    #: appears, unranked, rather than being hidden.
+    alignment_score: float | None
+    #: Requirement names, split by how well the profile covered them. Lets the
+    #: recruiter see why somebody ranks where they do without another request.
+    have: list[str]
+    partial: list[str]
+    missing: list[str]
+    #: Everything the candidate claims, not only what this role asked for.
+    skills: list[str]
+
+
+class CandidateListOut(BaseModel):
+    """The applicants to one posting, best-scoring first."""
+
+    posting: PostingOut
+    candidates: list[CandidateOut]
+    #: Counts by status, so the UI can show a funnel without a second request.
+    status_counts: dict[str, int]
+
+
+class ApplicationDecisionIn(BaseModel):
+    """A recruiter moving one candidate along.
+
+    The decision is always a person's. Nothing on this platform advances or
+    rejects an application on a score — the ranking is advice, and the status
+    only ever changes because a recruiter chose to change it.
+    """
+
+    status: ApplicationStatus

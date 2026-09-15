@@ -2,6 +2,8 @@ import type {
   AdminOrganization,
   AdminStats,
   Board,
+  Candidate,
+  CandidateList,
   BoardEntry,
   ExtractionPreview,
   MyApplication,
@@ -173,6 +175,22 @@ export const api = {
   closePosting: (id: number) => post<Posting>(`/api/employer/postings/${id}/close`),
   deletePosting: (id: number) =>
     request<void>(`/api/employer/postings/${id}`, { method: "DELETE" }),
+
+  // --- Candidates ---
+  candidates: (postingId: number) =>
+    request<CandidateList>(`/api/employer/postings/${postingId}/applications`),
+  decideOnCandidate: (postingId: number, applicationId: number, status: string) =>
+    request<Candidate>(
+      `/api/employer/postings/${postingId}/applications/${applicationId}`,
+      { method: "PATCH", body: JSON.stringify({ status }) },
+    ),
+  /**
+   * The export URL, for an <a download>. Not fetched: letting the browser make
+   * the request is what gives the user a real Save dialog and the filename the
+   * server chose. The session cookie rides along because it is same-origin.
+   */
+  candidatesCsvUrl: (postingId: number) =>
+    `${BASE}/api/employer/postings/${postingId}/applications.csv`,
 
   // --- Administration ---
   adminStats: () => request<AdminStats>("/api/admin/stats"),

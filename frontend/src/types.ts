@@ -162,6 +162,37 @@ export interface PostingSummary {
 }
 
 // --------------------------------------------------------------------------
+// Candidates — the recruiter's view of who applied
+// --------------------------------------------------------------------------
+
+export interface Candidate {
+  application_id: number;
+  status: ApplicationStatus;
+  applied_at: string;
+  cover_note: string | null;
+
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  headline: string | null;
+  location: string | null;
+  years_experience: number;
+
+  /** Null when they applied with an empty profile. They are still listed. */
+  alignment_score: number | null;
+  have: string[];
+  partial: string[];
+  missing: string[];
+  skills: string[];
+}
+
+export interface CandidateList {
+  posting: Posting;
+  candidates: Candidate[];
+  status_counts: Record<string, number>;
+}
+
+// --------------------------------------------------------------------------
 // Administration
 // --------------------------------------------------------------------------
 

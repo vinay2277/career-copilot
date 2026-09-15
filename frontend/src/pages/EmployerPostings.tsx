@@ -9,7 +9,13 @@ const STATUS_CHIP: Record<PostingStatus, string> = {
   closed: "chip-missing",
 };
 
-export default function EmployerPostings({ onPost }: { onPost: () => void }) {
+export default function EmployerPostings({
+  onPost,
+  onOpen,
+}: {
+  onPost: () => void;
+  onOpen: (postingId: number) => void;
+}) {
   const postings = useAsync(() => api.myPostings(), []);
   const act = useAction();
 
@@ -79,7 +85,9 @@ export default function EmployerPostings({ onPost }: { onPost: () => void }) {
                     </td>
                     <td className="num">
                       {application_count > 0 ? (
-                        <strong>{application_count}</strong>
+                        <button className="link" onClick={() => onOpen(posting.id)}>
+                          <strong>{application_count}</strong>
+                        </button>
                       ) : (
                         <span className="muted">0</span>
                       )}
@@ -128,6 +136,7 @@ export default function EmployerPostings({ onPost }: { onPost: () => void }) {
           </div>
 
           <p className="muted small" style={{ marginTop: "0.7rem" }}>
+            Click an applicant count to review candidates and export them.
             Closing stops new applications; everyone who already applied keeps
             their record. Only drafts can be deleted — deleting a published role
             would take its applicants with it.

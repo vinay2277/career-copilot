@@ -8,10 +8,13 @@ have already loaded is one somebody will eventually forget.
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
+import re
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -25,14 +28,19 @@ from app.api.deps import (
 from app.db.session import get_db
 from app.models import (
     Account,
+    ApplicationStatus,
     JobPosting,
     Organization,
     PostingApplication,
     PostingRequirement,
     PostingSource,
     PostingStatus,
+    Profile,
 )
 from app.schemas_posting import (
+    ApplicationDecisionIn,
+    CandidateListOut,
+    CandidateOut,
     PostingDraftIn,
     PostingDraftOut,
     PostingOut,
@@ -336,6 +344,255 @@ def close_posting(
     db.commit()
     db.refresh(posting)
     return posting
+
+
+# --------------------------------------------------------------------------- #
+# Candidates
+# --------------------------------------------------------------------------- #
+
+
+def _candidates(db: Session, posting: JobPosting) -> list[CandidateOut]:
+    """The posting's applicants, best-scoring first.
+
+    Ranked, never filtered. Every applicant appears however they scored — the
+    score orders the list and explains itself, and a person decides what to do
+    about it. Hiding candidates below a cut-off would make the ranking an
+    automated rejection, which is exactly what this must not be.
+    """
+    # Account is joined rather than reached through `profile.account`, which
+    # would be one extra query per candidate. Profile.skills is already
+    # selectin-loaded on the model, so this is two queries for the whole list.
+    rows = list(
+        db.execute(
+            select(PostingApplication, Profile, Account)
+            .join(Profile, Profile.id == PostingApplication.profile_id)
+            .join(Account, Account.id == Profile.account_id)
+            .where(PostingApplication.posting_id == posting.id)
+        ).all()
+    )
+
+    # A None score sorts last rather than crashing the comparison: applying with
+    # an empty profile is allowed, and those rows still have to render.
+    rows.sort(
+        key=lambda row: (
+            row[0].alignment_score is None,
+            -(row[0].alignment_score or 0.0),
+            row[0].applied_at,
+        )
+    )
+
+    out: list[CandidateOut] = []
+    for application, profile, account in rows:
+        detail = application.alignment_detail or {}
+        out.append(
+            CandidateOut(
+                application_id=application.id,
+                status=application.status,
+                applied_at=application.applied_at,
+                cover_note=application.cover_note,
+                full_name=profile.full_name,
+                email=profile.email or account.email,
+                phone=profile.phone,
+                headline=profile.headline,
+                location=profile.location,
+                years_experience=profile.years_experience,
+                alignment_score=application.alignment_score,
+                have=list(detail.get("have", [])),
+                partial=list(detail.get("partial", [])),
+                missing=list(detail.get("missing", [])),
+                skills=sorted(s.name for s in profile.skills),
+            )
+        )
+    return out
+
+
+@router.get("/postings/{posting_id}/applications", response_model=CandidateListOut)
+def list_candidates(
+    posting_id: int,
+    db: Session = Depends(get_db),
+    organization: Organization = Depends(require_verified_organization),
+) -> CandidateListOut:
+    """Who applied to this role.
+
+    Gated on verification like posting is: an organization nobody has approved
+    has no business reading students' contact details.
+    """
+    posting = _owned(db, posting_id, organization)
+    candidates = _candidates(db, posting)
+
+    counts: dict[str, int] = {}
+    for candidate in candidates:
+        key = candidate.status.value
+        counts[key] = counts.get(key, 0) + 1
+
+    return CandidateListOut(
+        posting=PostingOut.model_validate(posting),
+        candidates=candidates,
+        status_counts=counts,
+    )
+
+
+@router.patch(
+    "/postings/{posting_id}/applications/{application_id}",
+    response_model=CandidateOut,
+)
+def decide_on_candidate(
+    posting_id: int,
+    application_id: int,
+    payload: ApplicationDecisionIn,
+    db: Session = Depends(get_db),
+    organization: Organization = Depends(require_verified_organization),
+) -> CandidateOut:
+    """Move one candidate along — shortlist, interview, offer, or decline.
+
+    The student sees this status on their own applications page, so it is not
+    a private annotation: changing it tells them where they stand. That is the
+    intent. Being rejected silently is the thing applicants hate most, and a
+    status nobody can see would be no better than not having one.
+    """
+    posting = _owned(db, posting_id, organization)
+
+    application = db.execute(
+        select(PostingApplication).where(
+            PostingApplication.id == application_id,
+            PostingApplication.posting_id == posting.id,
+        )
+    ).scalar_one_or_none()
+
+    if application is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such application.")
+
+    if payload.status is ApplicationStatus.WITHDRAWN:
+        # Withdrawing is the student's own act. A recruiter marking somebody
+        # withdrawn would misrepresent what happened in the student's record.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Only the candidate can withdraw an application. Use 'rejected' "
+            "to decline it.",
+        )
+
+    application.status = payload.status
+    db.commit()
+    logger.info(
+        "org %s moved application %s to %s",
+        organization.id,
+        application.id,
+        payload.status.value,
+    )
+
+    updated = [c for c in _candidates(db, posting) if c.application_id == application_id]
+    return updated[0]
+
+
+#: What a stage is called in the product. The stored value for a shortlisted
+#: candidate is "screening", which the student-side tracker has always used;
+#: writing that into a recruiter's spreadsheet would use a different word for
+#: the action than the button they clicked.
+STAGE_LABELS = {
+    ApplicationStatus.SAVED: "Saved",
+    ApplicationStatus.APPLIED: "Applied",
+    ApplicationStatus.SCREENING: "Shortlisted",
+    ApplicationStatus.INTERVIEWING: "Interviewing",
+    ApplicationStatus.OFFER: "Offer",
+    ApplicationStatus.REJECTED: "Declined",
+    ApplicationStatus.WITHDRAWN: "Withdrawn",
+}
+
+
+#: Order matters — this is the header row of the export, and recruiters read it
+#: left to right: who, how to reach them, how they scored, where they stand.
+CSV_COLUMNS = [
+    "rank",
+    "name",
+    "email",
+    "phone",
+    "headline",
+    "location",
+    "years_experience",
+    "alignment_score",
+    "stage",
+    "applied_at",
+    "requirements_met",
+    "requirements_partial",
+    "requirements_missing",
+    "all_skills",
+    "cover_note",
+]
+
+
+@router.get(
+    "/postings/{posting_id}/applications.csv",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+def export_candidates(
+    posting_id: int,
+    db: Session = Depends(get_db),
+    organization: Organization = Depends(require_verified_organization),
+) -> Response:
+    """The candidate list as a spreadsheet.
+
+    CSV rather than a real .xlsx: Excel, Sheets and Numbers all open it, and it
+    needs no dependency — which matters, since a library installed locally but
+    missing from requirements.txt has already broken one deploy here.
+
+    Written with `utf-8-sig`. Without the BOM, Excel on Windows reads the file
+    as the system codepage and mangles any name with an accent in it.
+    """
+    posting = _owned(db, posting_id, organization)
+    candidates = _candidates(db, posting)
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(CSV_COLUMNS)
+
+    for rank, c in enumerate(candidates, start=1):
+        writer.writerow(
+            [
+                rank,
+                c.full_name,
+                c.email or "",
+                c.phone or "",
+                c.headline or "",
+                c.location or "",
+                f"{c.years_experience:g}",
+                "" if c.alignment_score is None else f"{c.alignment_score:.1f}",
+                STAGE_LABELS.get(c.status, c.status.value),
+                c.applied_at.isoformat(timespec="seconds"),
+                "; ".join(c.have),
+                "; ".join(c.partial),
+                "; ".join(c.missing),
+                "; ".join(c.skills),
+                (c.cover_note or "").replace("\r\n", " ").replace("\n", " "),
+            ]
+        )
+
+    filename = _export_filename(posting)
+    logger.info(
+        "org %s exported %s candidates for posting %s",
+        organization.id,
+        len(candidates),
+        posting.id,
+    )
+    return Response(
+        content=buffer.getvalue().encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _export_filename(posting: JobPosting) -> str:
+    """A filename safe to put in a Content-Disposition header.
+
+    Restricted to characters that cannot terminate the quoted string or inject
+    a header — a job title is recruiter-supplied text, so it is not trusted to
+    be well behaved.
+    """
+    stem = "".join(
+        ch if ch.isalnum() or ch in "-_" else "-" for ch in posting.title.lower()
+    ).strip("-")
+    stem = re.sub(r"-{2,}", "-", stem) or "candidates"
+    return f"{stem[:60]}-candidates-{datetime.now(UTC):%Y%m%d}.csv"
 
 
 @router.delete("/postings/{posting_id}", status_code=status.HTTP_204_NO_CONTENT)

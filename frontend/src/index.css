@@ -918,3 +918,56 @@ ul.clean li {
   font-size: 0.76rem;
   font-weight: 600;
 }
+
+/* --- Candidate review --- */
+
+/* The expanded "why" row under a candidate. Inset and tinted so it reads as
+   belonging to the row above rather than as another row in the table. */
+.detail-panel {
+  padding: 0.85rem 1rem;
+  background: var(--surface-alt);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--accent);
+}
+
+.detail-panel p:first-child {
+  margin-top: 0;
+}
+
+.detail-panel p:last-child {
+  margin-bottom: 0;
+}
+
+/* Chips wrap rather than stretching the table: a role can ask for a dozen
+   skills and the column must not grow to fit them all on one line. */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.6rem 0;
+}
+
+/* An <a> that has to look like the buttons beside it — used for the CSV
+   download, which must stay a real link so the browser handles the save. */
+.button-link {
+  display: inline-block;
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* The accent lightens in dark mode, so white text on it stops being legible —
+   the same swap button.primary makes. */
+@media (prefers-color-scheme: dark) {
+  .button-link {
+    color: #1a1513;
+  }
+}
+
+.button-link:hover {
+  filter: brightness(1.08);
+}

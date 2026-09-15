@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import {
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import Login from "./Login";
 import { api } from "./api";
 import type { Account } from "./types";
@@ -7,6 +14,7 @@ import ActionCenter from "./pages/ActionCenter";
 import AddJob from "./pages/AddJob";
 import AdminOrganizations from "./pages/AdminOrganizations";
 import Analytics from "./pages/Analytics";
+import EmployerCandidates from "./pages/EmployerCandidates";
 import EmployerPostings from "./pages/EmployerPostings";
 import JobBoard from "./pages/JobBoard";
 import MyApplications from "./pages/MyApplications";
@@ -84,6 +92,14 @@ function AccountBar({
   );
 }
 
+/** Reads the posting id out of the URL so the page itself stays a pure view. */
+function CandidatesRoute({ onBack }: { onBack: () => void }) {
+  const { postingId } = useParams();
+  const id = Number(postingId);
+  if (!Number.isInteger(id)) return <Navigate to="/roles" replace />;
+  return <EmployerCandidates postingId={id} onBack={onBack} />;
+}
+
 const RECRUITER_NAV = [
   { to: "/roles", label: "Your roles" },
   { to: "/post", label: "Post a role" },
@@ -134,7 +150,16 @@ function RecruiterShell({
           <Route path="/" element={<Navigate to="/roles" replace />} />
           <Route
             path="/roles"
-            element={<EmployerPostings onPost={() => navigate("/post")} />}
+            element={
+              <EmployerPostings
+                onPost={() => navigate("/post")}
+                onOpen={(id) => navigate(`/roles/${id}`)}
+              />
+            }
+          />
+          <Route
+            path="/roles/:postingId"
+            element={<CandidatesRoute onBack={() => navigate("/roles")} />}
           />
           <Route
             path="/post"
