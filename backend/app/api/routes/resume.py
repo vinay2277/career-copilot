@@ -13,7 +13,7 @@ from app.api.deps import get_profile
 from app.core.config import settings
 from app.core.security import rate_limit_ai
 from app.db.session import get_db
-from app.models import Application, JobPost, Profile, Resume, TailoredResume
+from app.models import Application, Profile, Resume, TailoredResume
 from app.schemas import (
     ProfileUpdateOut,
     ResumeOut,
@@ -21,8 +21,13 @@ from app.schemas import (
     TailoredResumeOut,
 )
 from app.services.ingestion import parsers
+from app.services.postings import (
+    posting_for_student,
+    posting_text_for_agents,
+    score_posting,
+)
 from app.services.profile_merge import merge_resume_into_profile
-from app.services.scoring import load_aliases, refresh_cached_score, score_job
+from app.services.scoring import load_aliases, refresh_cached_score
 
 router = APIRouter(prefix="/api/resume", tags=["resume"])
 
@@ -257,18 +262,20 @@ def tailor_for_job(
     knows which gaps are genuine and must not be written around — the prompt
     returns those as `unaddressable_gaps` rather than papering over them.
     """
-    job = db.get(JobPost, job_id)
+    job = posting_for_student(db, job_id)
     if job is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such job.")
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "No such open role on the board."
+        )
 
     resume = _primary_resume(db, profile)
-    alignment = score_job(db, profile, job)
+    alignment = score_posting(db, profile, job)
     missing = [r.name for r in alignment.missing]
 
     try:
         draft = tailor_resume(
             resume_text=resume.raw_text,
-            job_text=job.raw_text,
+            job_text=posting_text_for_agents(job),
             missing_skills=missing,
         )
     except AgentError as e:

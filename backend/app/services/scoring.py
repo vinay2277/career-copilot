@@ -111,14 +111,23 @@ def score_board(
     profile: Profile,
     jobs: list[JobPost] | None = None,
 ) -> list[ScoredJob]:
-    """Score every tracked job, in the shape the ROI and what-if engines want.
+    """Score the roles a student can act on, for the ROI and what-if engines.
 
-    Loads the alias table once and reuses it, since scoring a 50-job board
+    With no `jobs` given this reads the **open postings on the platform** — the
+    same board the student applies from. It used to read their own pasted-in
+    job tracker, which no longer exists on the student side: pasting a job
+    found elsewhere is a recruiter's job now, and a student's world is the
+    board.
+
+    That is also the better question to answer. "Which skill unlocks the most
+    roles I could apply to today" beats "the most roles I happened to paste in".
+
+    Loads the alias table once and reuses it, since scoring a 50-role board
     otherwise means 50 identical queries.
     """
     aliases = load_aliases(db)
     if jobs is None:
-        jobs = list(db.execute(select(JobPost)).scalars())
+        return _score_postings(db, profile, aliases)
 
     board: list[ScoredJob] = []
     for job in jobs:
@@ -129,6 +138,56 @@ def score_board(
                 job_id=job.id,
                 title=job.title,
                 company=job.company,
+                requirements=requirements,
+                facts=facts,
+                baseline=score_alignment(
+                    requirements,
+                    skills_of(profile),
+                    preferences_of(profile.preferences),
+                    facts,
+                    aliases,
+                ),
+            )
+        )
+    return board
+
+
+def _score_postings(
+    db: Session, profile: Profile, aliases: dict[str, str]
+) -> list[ScoredJob]:
+    """Score every open posting into the same shape a tracked job produced.
+
+    `ScoredJob` is the analytics engines' input dataclass and neither of them
+    knows or cares which table a role came from — which is what made swapping
+    the source a change in one function rather than four.
+    """
+    from app.services.postings import open_postings
+
+    board: list[ScoredJob] = []
+    for posting in open_postings(db):
+        requirements = [
+            RequirementInput(
+                name=r.name, necessity=r.necessity, min_years=r.min_years
+            )
+            for r in posting.requirements
+        ]
+        # Mirrors `facts_of` exactly. JobFacts carries only what the
+        # preference half compares against — no company name, no currency.
+        facts = JobFacts(
+            title=posting.title,
+            location=posting.location,
+            remote=posting.remote,
+            seniority=posting.seniority,
+            salary_min=posting.salary_min,
+            salary_max=posting.salary_max,
+            industry=posting.industry,
+            company_size=posting.company_size,
+        )
+        board.append(
+            ScoredJob(
+                job_id=posting.id,
+                title=posting.title,
+                company=posting.company_name,
                 requirements=requirements,
                 facts=facts,
                 baseline=score_alignment(
@@ -190,6 +249,50 @@ def histories_of(applications: list[Application]) -> list[ApplicationHistory]:
                 company=app.job.company,
                 transitions=transitions,
                 alignment_score=app.alignment_score,
+            )
+        )
+    return histories
+
+
+def histories_of_applications(applications) -> list[ApplicationHistory]:
+    """Funnel input built from board applications rather than tracked jobs.
+
+    Same dataclass, different table. The funnel engine never knew which one it
+    was reading, which is what made moving the student side onto the board a
+    change of adapter rather than a rewrite of the analysis.
+
+    An application with no recorded events still appears, with one synthetic
+    transition from its current status — rows created before the event log
+    existed should stay in the denominator rather than quietly improving the
+    conversion rate by leaving it.
+    """
+    histories: list[ApplicationHistory] = []
+    for application in applications:
+        if application.events:
+            transitions = [
+                Transition(
+                    to_status=e.to_status,
+                    occurred_at=e.occurred_at,
+                    from_status=e.from_status,
+                )
+                for e in application.events
+            ]
+        else:
+            transitions = [
+                Transition(
+                    to_status=application.status,
+                    occurred_at=application.applied_at,
+                )
+            ]
+
+        posting = application.posting
+        histories.append(
+            ApplicationHistory(
+                application_id=application.id,
+                job_title=posting.title if posting else "(role removed)",
+                company=posting.company_name if posting else "",
+                transitions=transitions,
+                alignment_score=application.alignment_score,
             )
         )
     return histories

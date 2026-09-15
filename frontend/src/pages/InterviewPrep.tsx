@@ -13,7 +13,13 @@ const KINDS: { id: InterviewKind; label: string; hint: string }[] = [
 ];
 
 export default function InterviewPrep() {
-  const board = useAsync(() => api.listOpportunities(), []);
+  // Practise against the open roles on the board. This used to read the
+  // student's own pasted-in job tracker, which no longer exists — and the
+  // board is the better list anyway, since these are roles they can apply to.
+  const board = useAsync(
+    () => api.board().then((b) => [...b.from_employers, ...b.sourced]),
+    [],
+  );
   const sessions = useAsync(() => api.listSessions(), []);
   const start = useAction();
 
@@ -61,8 +67,8 @@ export default function InterviewPrep() {
       <Card title="Start a round">
         {jobs.length === 0 ? (
           <p className="muted">
-            No jobs on the board yet. <Link to="/add">Add one</Link> first — questions
-            are grounded in a specific posting.
+            No open roles yet. <Link to="/jobs">Check the job board</Link> —
+            questions are grounded in a specific posting.
           </p>
         ) : (
           <>
@@ -74,9 +80,9 @@ export default function InterviewPrep() {
                   onChange={(e) => setJobId(e.target.value ? Number(e.target.value) : "")}
                 >
                   <option value="">Choose a posting…</option>
-                  {jobs.map((o) => (
-                    <option key={o.job.id} value={o.job.id}>
-                      {o.job.title} — {o.job.company}
+                  {jobs.map((entry) => (
+                    <option key={entry.posting.id} value={entry.posting.id}>
+                      {entry.posting.title} — {entry.posting.company_name}
                     </option>
                   ))}
                 </select>

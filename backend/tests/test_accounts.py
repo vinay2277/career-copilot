@@ -202,7 +202,7 @@ def test_a_suspended_account_cannot_use_its_existing_session(client, db_session)
 
 @pytest.mark.parametrize(
     "path",
-    ["/api/profile", "/api/opportunities", "/api/skill-roi", "/api/analytics/funnel"],
+    ["/api/profile", "/api/board", "/api/skill-roi", "/api/analytics/funnel"],
 )
 def test_recruiters_cannot_reach_student_routes(recruiter, path):
     response = recruiter.get(path)
@@ -212,12 +212,12 @@ def test_recruiters_cannot_reach_student_routes(recruiter, path):
 
 def test_students_reach_their_own_routes(student):
     assert student.get("/api/profile").status_code == 200
-    assert student.get("/api/opportunities").status_code == 200
+    assert student.get("/api/board").status_code == 200
 
 
 def test_anonymous_callers_are_refused(client):
     assert client.get("/api/profile").status_code == 401
-    assert client.get("/api/opportunities").status_code == 401
+    assert client.get("/api/board").status_code == 401
 
 
 # --------------------------------------------------------------------------- #

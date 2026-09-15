@@ -13,9 +13,13 @@ from app.agents.interview import generate_questions, grade_answer, summarize_ses
 from app.api.deps import get_profile
 from app.core.security import rate_limit_ai
 from app.db.session import get_db
-from app.models import InterviewSession, InterviewTurn, JobPost, Profile
+from app.models import InterviewSession, InterviewTurn, Profile
 from app.schemas import AnswerIn, InterviewSessionOut, InterviewStartIn, TurnOut
-from app.services.scoring import score_job
+from app.services.postings import (
+    posting_for_student,
+    posting_text_for_agents,
+    score_posting,
+)
 
 router = APIRouter(prefix="/api/interview", tags=["interview"])
 
@@ -59,16 +63,18 @@ def start_session(
     Questions are weighted toward the gaps the alignment scorer found, because
     that is where a real interview will press hardest.
     """
-    job = db.get(JobPost, payload.job_id)
+    job = posting_for_student(db, payload.job_id)
     if job is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such job.")
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "No such open role on the board."
+        )
 
-    alignment = score_job(db, profile, job)
+    alignment = score_posting(db, profile, job)
     gaps = [r.name for r in alignment.missing + alignment.partial]
 
     try:
         generated = generate_questions(
-            job_text=job.raw_text,
+            job_text=posting_text_for_agents(job),
             kind=payload.kind.value,
             missing_skills=gaps,
             count=payload.question_count,

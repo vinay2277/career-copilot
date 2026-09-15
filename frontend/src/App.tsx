@@ -11,7 +11,6 @@ import Login from "./Login";
 import { api } from "./api";
 import type { Account } from "./types";
 import ActionCenter from "./pages/ActionCenter";
-import AddJob from "./pages/AddJob";
 import AdminOrganizations from "./pages/AdminOrganizations";
 import Analytics from "./pages/Analytics";
 import EmployerCandidates from "./pages/EmployerCandidates";
@@ -23,7 +22,6 @@ import MyApplications from "./pages/MyApplications";
 import PostJob from "./pages/PostJob";
 import InterviewPrep from "./pages/InterviewPrep";
 import LearningRoadmap from "./pages/LearningRoadmap";
-import Opportunities from "./pages/Opportunities";
 import ProfilePage from "./pages/Profile";
 import ScreeningInterview from "./pages/ScreeningInterview";
 import SkillRoi from "./pages/SkillRoi";
@@ -36,13 +34,6 @@ const NAV = [
     links: [
       { to: "/jobs", label: "Job board" },
       { to: "/applications", label: "My applications" },
-    ],
-  },
-  {
-    group: "My own finds",
-    links: [
-      { to: "/add", label: "Add a job" },
-      { to: "/opportunities", label: "Opportunities" },
     ],
   },
   {
@@ -353,9 +344,6 @@ export default function App() {
             path="/applications/:applicationId/interview"
             element={<InterviewRoute onBack={() => navigate("/applications")} />}
           />
-          <Route path="/add" element={<AddJob />} />
-          <Route path="/opportunities" element={<Opportunities />} />
-          <Route path="/opportunities/:jobId" element={<Opportunities />} />
           <Route path="/action-center" element={<ActionCenter />} />
           <Route path="/skill-roi" element={<SkillRoi />} />
           <Route path="/analytics" element={<Analytics />} />

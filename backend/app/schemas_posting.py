@@ -80,6 +80,12 @@ class PostingParseIn(BaseModel):
     text: str = Field(min_length=120)
 
 
+class PostingUrlIn(BaseModel):
+    """A link to the role on the employer's own careers site."""
+
+    url: str = Field(min_length=8, max_length=2000)
+
+
 class PostingDraftOut(BaseModel):
     """An extracted draft, for the recruiter to check before publishing.
 

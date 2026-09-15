@@ -4,20 +4,20 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.agents.career_intelligence import recommend
 from app.agents.client import AgentError
 from app.api.deps import get_profile
 from app.core.security import rate_limit_ai
 from app.db.session import get_db
-from app.models import Application, Profile
+from app.models import PostingApplication, Profile
 from app.schemas import FunnelOut, GuidanceOut, StageOut
 from app.services.analytics import funnel as funnel_engine
 from app.services.analytics.skill_roi import rank_skills
 from app.services.context import build_context
 from app.services.scoring import (
-    histories_of,
+    histories_of_applications,
     load_aliases,
     preferences_of,
     score_board,
@@ -37,12 +37,21 @@ def _stage_out(stage: funnel_engine.StageStats) -> StageOut:
 
 
 def _build_funnel(db: Session, profile: Profile) -> funnel_engine.FunnelReport:
+    """The student's funnel, over the roles they applied to on the board.
+
+    It used to read their private job tracker, which the student side no
+    longer has. This is the better source anyway: these are real applications
+    to real employers whose stages a recruiter actually moved, rather than
+    statuses the student set on their own notes.
+    """
     applications = list(
         db.execute(
-            select(Application).where(Application.profile_id == profile.id)
+            select(PostingApplication)
+            .where(PostingApplication.profile_id == profile.id)
+            .options(selectinload(PostingApplication.posting))
         ).scalars()
     )
-    return funnel_engine.analyze(histories_of(applications))
+    return funnel_engine.analyze(histories_of_applications(applications))
 
 
 @router.get("/funnel", response_model=FunnelOut)

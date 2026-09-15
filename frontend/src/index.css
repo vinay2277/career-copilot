@@ -1116,3 +1116,35 @@ ul.clean li {
   border-color: var(--weak, #b4462f);
   text-decoration: line-through;
 }
+
+/* --- Posting intake --- */
+
+/* Five ways in, as a row of tabs rather than a dropdown: a recruiter arriving
+   with a PDF should see that PDF is accepted without opening anything. */
+.source-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.source-tabs button {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+
+.source-tabs button.is-active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  .source-tabs button.is-active { color: #1a1513; }
+}

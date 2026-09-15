@@ -17,12 +17,25 @@ import type { PostingDraft, PostingPayload } from "../types";
  * role typed in here and one we sourced elsewhere are read on identical terms
  * and scored against identical requirements.
  */
+/** How a recruiter can hand us a role. Text first because it always works. */
+type SourceId = "text" | "url" | "pdf" | "image" | "manual";
+
+const SOURCES: { id: SourceId; label: string }[] = [
+  { id: "text", label: "Paste text" },
+  { id: "url", label: "Careers link" },
+  { id: "pdf", label: "PDF" },
+  { id: "image", label: "Screenshot" },
+  { id: "manual", label: "Fill in by hand" },
+];
+
 export default function PostJob({ onPublished }: { onPublished: () => void }) {
   const [text, setText] = useState("");
   const [draft, setDraft] = useState<PostingDraft | null>(null);
   const parse = useAction();
   const publish = useAction();
 
+  const [url, setUrl] = useState("");
+  const [source, setSource] = useState<SourceId>("text");
   const [interview, setInterview] = useState(true);
   const [questionCount, setQuestionCount] = useState(4);
 
@@ -74,38 +87,147 @@ export default function PostJob({ onPublished }: { onPublished: () => void }) {
 
   const flagged = new Set(draft?.unverified_fields ?? []);
 
+  const read = async (fn: () => Promise<PostingDraft>) => {
+    const result = await parse.run(fn);
+    if (result) setDraft(result);
+  };
+
+  /** An empty draft, for a recruiter who would rather just type it in. */
+  const blankDraft = (): PostingDraft => ({
+    title: "",
+    company_name: null,
+    description: null,
+    location: null,
+    remote: null,
+    seniority: null,
+    salary_min: null,
+    salary_max: null,
+    currency: null,
+    industry: null,
+    company_size: null,
+    education: null,
+    certifications: [],
+    total_years_experience: null,
+    requirements: [],
+    raw_text: "",
+    confidence: 1,
+    unverified_fields: [],
+    validation_notes: "Filled in by hand — nothing was extracted, so there is nothing to check.",
+  });
+
   return (
     <>
       <div className="page-head">
         <h1>Post a role</h1>
         <p>
-          Paste the description. It's read into structured requirements, then a
-          second pass checks every field against your text — candidates are
-          scored on those requirements, so it's worth a look before publishing.
+          However you already have it — a link to your careers site, a PDF, a
+          screenshot, or pasted text. It's read into structured requirements,
+          then a second pass checks every field against the source. Candidates
+          are scored on those requirements, so it's worth a look before
+          publishing.
         </p>
       </div>
 
       <Card>
-        <textarea
-          value={text}
-          placeholder="Paste the full job description here…"
-          onChange={(e) => setText(e.target.value)}
-        />
-        <div className="inline" style={{ marginTop: "0.6rem" }}>
-          <button
-            className="primary"
-            disabled={parse.pending || text.trim().length < 120}
-            onClick={async () => {
-              const result = await parse.run(() => api.parseDescription(text));
-              if (result) setDraft(result);
-            }}
-          >
-            {parse.pending ? "Reading…" : "Read the description"}
-          </button>
-          {text.trim().length > 0 && text.trim().length < 120 && (
-            <span className="muted small">Needs at least 120 characters.</span>
-          )}
+        <div className="source-tabs" role="tablist">
+          {SOURCES.map((s) => (
+            <button
+              key={s.id}
+              role="tab"
+              aria-selected={source === s.id}
+              className={source === s.id ? "is-active" : ""}
+              onClick={() => setSource(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
         </div>
+
+        {source === "text" && (
+          <>
+            <textarea
+              value={text}
+              placeholder="Paste the full job description here…"
+              onChange={(e) => setText(e.target.value)}
+            />
+            <div className="inline" style={{ marginTop: "0.6rem" }}>
+              <button
+                className="primary"
+                disabled={parse.pending || text.trim().length < 120}
+                onClick={() => read(() => api.parseDescription(text))}
+              >
+                {parse.pending ? "Reading…" : "Read the description"}
+              </button>
+              {text.trim().length > 0 && text.trim().length < 120 && (
+                <span className="muted small">Needs at least 120 characters.</span>
+              )}
+            </div>
+          </>
+        )}
+
+        {source === "url" && (
+          <>
+            <label>
+              Link to the role
+              <input
+                value={url}
+                placeholder="https://careers.example.com/jobs/data-engineer"
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && url.trim() && read(() => api.parseUrl(url.trim()))
+                }
+              />
+            </label>
+            <p className="muted small">
+              The page is fetched and read. If it needs a login or renders
+              entirely in JavaScript, use a PDF or a screenshot instead.
+            </p>
+            <button
+              className="primary"
+              disabled={parse.pending || url.trim().length < 8}
+              onClick={() => read(() => api.parseUrl(url.trim()))}
+            >
+              {parse.pending ? "Fetching…" : "Read the page"}
+            </button>
+          </>
+        )}
+
+        {(source === "pdf" || source === "image") && (
+          <>
+            <label>
+              {source === "pdf" ? "Job description PDF" : "Screenshot of the posting"}
+              <input
+                type="file"
+                accept={source === "pdf" ? "application/pdf" : "image/*"}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  read(() =>
+                    source === "pdf" ? api.parsePdf(file) : api.parseImage(file),
+                  );
+                }}
+              />
+            </label>
+            <p className="muted small">
+              {source === "pdf"
+                ? "Text is read straight out of the file."
+                : "Read by OCR first, so a sharp screenshot reads better than a photo of a screen."}
+            </p>
+          </>
+        )}
+
+        {source === "manual" && (
+          <>
+            <p className="muted small">
+              Nothing to extract — you fill in the fields and add the
+              requirements yourself. Use this when the role does not exist as a
+              document anywhere yet.
+            </p>
+            <button className="primary" onClick={() => setDraft(blankDraft())}>
+              Start a blank posting
+            </button>
+          </>
+        )}
 
         {parse.pending && <Spinner label="Extracting, then checking the extraction…" />}
         {parse.error && <ErrorNote message={parse.error} onDismiss={parse.clearError} />}

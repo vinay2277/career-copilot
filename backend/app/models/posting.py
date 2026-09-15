@@ -214,3 +214,42 @@ class PostingApplication(Base):
 
     posting: Mapped[JobPosting] = relationship(back_populates="applications")
     profile: Mapped[Profile] = relationship()
+    events: Mapped[list[PostingStatusEvent]] = relationship(
+        back_populates="application",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="PostingStatusEvent.occurred_at",
+    )
+
+
+class PostingStatusEvent(Base):
+    """One recorded move of an application from one stage to the next.
+
+    The application row carries only where a candidate is now. A funnel needs
+    to know how they got there and when — how long they sat in screening, which
+    stage applications die at — and none of that is recoverable from a single
+    status plus an `updated_at` that the last edit overwrote.
+
+    Written by the two things that move an application: applying, and a
+    recruiter changing the stage. Nothing else may write here, because an event
+    log that anything can append to stops being a record of what happened.
+    """
+
+    __tablename__ = "posting_status_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    application_id: Mapped[int] = mapped_column(
+        ForeignKey("posting_applications.id"), index=True
+    )
+
+    #: Null on the first event — there was no previous stage to come from.
+    from_status: Mapped[ApplicationStatus | None] = mapped_column(
+        EnumStr(ApplicationStatus), nullable=True
+    )
+    to_status: Mapped[ApplicationStatus] = mapped_column(EnumStr(ApplicationStatus))
+
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, index=True
+    )
+
+    application: Mapped[PostingApplication] = relationship(back_populates="events")

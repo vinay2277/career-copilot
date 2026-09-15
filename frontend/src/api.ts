@@ -12,7 +12,6 @@ import type {
   ModuleRow,
   Screening,
   BoardEntry,
-  ExtractionPreview,
   MyApplication,
   Posting,
   PostingApplication,
@@ -24,9 +23,7 @@ import type {
   InterviewKind,
   InterviewSession,
   InterviewTurn,
-  Job,
   LearningPath,
-  Opportunity,
   Profile,
   ProfileUpdate,
   Resume,
@@ -180,6 +177,12 @@ export const api = {
   // --- Recruiter postings ---
   parseDescription: (text: string) =>
     post<PostingDraft>("/api/employer/postings/parse", { text }),
+  parseUrl: (url: string) =>
+    post<PostingDraft>("/api/employer/postings/parse/url", { url }),
+  parsePdf: (file: File) =>
+    upload<PostingDraft>("/api/employer/postings/parse/pdf", file),
+  parseImage: (file: File) =>
+    upload<PostingDraft>("/api/employer/postings/parse/image", file),
   createPosting: (payload: PostingPayload) =>
     post<Posting>("/api/employer/postings", payload),
   myPostings: () => request<PostingSummary[]>("/api/employer/postings"),
@@ -230,35 +233,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
-
-  // --- Ingestion ---
-  extractText: (text: string) => post<ExtractionPreview>("/api/extract/text", { text }),
-  extractUrl: (url: string) => post<ExtractionPreview>("/api/extract/url", { url }),
-  extractPdf: (file: File) => upload<ExtractionPreview>("/api/extract/pdf", file),
-  extractImage: (file: File) => upload<ExtractionPreview>("/api/extract/image", file),
-  confirmExtraction: (preview: ExtractionPreview) =>
-    post<Job>("/api/extract/confirm", preview),
-
-  // --- Board ---
-  listOpportunities: (params?: { status?: string; minScore?: number; breakdown?: boolean }) => {
-    const q = new URLSearchParams();
-    if (params?.status) q.set("status", params.status);
-    if (params?.minScore != null) q.set("min_score", String(params.minScore));
-    if (params?.breakdown) q.set("include_breakdown", "true");
-    const suffix = q.toString() ? `?${q}` : "";
-    return request<Opportunity[]>(`/api/opportunities${suffix}`);
-  },
-  getOpportunity: (jobId: number) => request<Opportunity>(`/api/opportunities/${jobId}`),
-  updateApplication: (
-    jobId: number,
-    payload: { status?: string; notes?: string; deadline?: string },
-  ) =>
-    request<Opportunity>(`/api/opportunities/${jobId}/application`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    }),
-  deleteOpportunity: (jobId: number) =>
-    request<void>(`/api/opportunities/${jobId}`, { method: "DELETE" }),
 
   // --- Analytics ---
   skillRoi: (limit = 10) => request<SkillROI[]>(`/api/skill-roi?limit=${limit}`),

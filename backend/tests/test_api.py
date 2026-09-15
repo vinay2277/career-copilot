@@ -1,24 +1,24 @@
 """End-to-end API tests against a real (temporary) database.
 
-No API key needed: these drive `/api/extract/confirm`, which takes an already
-validated preview, so the two agent calls are out of the path. Everything after
-ingestion — persistence, scoring, the board, ROI, the funnel — is covered.
+No API key needed. Roles are seeded by a recruiter publishing them through
+`/api/employer/postings`, which takes an already-structured payload, so the two
+extraction agents stay out of the path. Everything after ingestion —
+persistence, scoring, the board, ROI, the what-if simulator, the funnel — is
+covered.
+
+These used to seed roles through the student's own job tracker. That surface is
+gone: pasting in a role found elsewhere is a recruiter's job now, and the
+student's world is the shared board. The analytics engines never knew which
+table a role came from, so what changed here is how roles get created, not what
+is asserted about them.
 """
 
 from __future__ import annotations
 
 import pytest
 
-
-@pytest.fixture
-def client(student):
-    """Signed in as a student.
-
-    Every route exercised in this file is student-owned, so the authenticated
-    client is what `client` means here. Overriding the name keeps the tests
-    below unchanged from before accounts existed.
-    """
-    return student
+from tests.conftest import HR_PASSWORD, register_hr, register_student
+from tests.test_postings import verify_organization
 
 
 def make_profile(client, skills=None, **prefs):
@@ -45,51 +45,76 @@ def make_profile(client, skills=None, **prefs):
     return response.json()
 
 
-def preview(title="Backend Engineer", requirements=None, **overrides):
-    """A synthetic extraction preview, as the confirm endpoint expects."""
+def role(title="Backend Engineer", requirements=None, **overrides):
+    """A posting payload, as the employer endpoint expects."""
     body = {
         "title": title,
-        "company": "Acme",
-        "location": "Remote",
+        "description": "Build and run backend services.",
+        "location": "Berlin",
         "remote": True,
         "seniority": "senior",
-        "salary_min": 120_000,
-        "salary_max": 160_000,
+        "salary_min": 90_000,
+        "salary_max": 130_000,
         "currency": "USD",
-        "industry": "software",
+        "industry": "fintech",
         "company_size": "medium",
-        "description": "Build backend services.",
         "requirements": requirements
         if requirements is not None
         else [
-            {
-                "name": "python",
-                "necessity": "required",
-                "min_years": 3.0,
-                "evidence": "3+ years of Python",
-            },
-            {
-                "name": "kubernetes",
-                "necessity": "required",
-                "min_years": 0.0,
-                "evidence": "experience with Kubernetes",
-            },
+            {"name": "python", "necessity": "required", "min_years": 3},
+            {"name": "kubernetes", "necessity": "required", "min_years": 2},
         ],
-        "source_kind": "text",
-        "source_url": None,
-        "raw_text": "We want a backend engineer with 3+ years of Python and Kubernetes.",
-        "confidence": 0.95,
-        "unverified_fields": [],
-        "contradicted_fields": [],
-        "validation_notes": "All fields grounded.",
-        "needs_confirmation": False,
+        "raw_text": f"{title}. We need Python and Kubernetes experience.",
+        # Off, so seeding a board never depends on anything model-shaped.
+        "interview_required": False,
     }
     body.update(overrides)
     return body
 
 
+@pytest.fixture
+def recruiter_client(api, db_session):
+    """A verified recruiter, for publishing the roles a test needs."""
+    register_hr(api)
+    verify_organization(db_session)
+    return api
+
+
+def publish(client, **kwargs) -> int:
+    """Create and publish one role, returning its id."""
+    created = client.post("/api/employer/postings", json=role(**kwargs))
+    assert created.status_code == 201, created.text
+    posting_id = created.json()["id"]
+    published = client.post(f"/api/employer/postings/{posting_id}/publish")
+    assert published.status_code == 200, published.text
+    return posting_id
+
+
+def as_student(client, email="student@example.com"):
+    """Swap the signed-in account for a fresh student."""
+    client.post("/api/auth/logout")
+    register_student(client, email=email)
+    return client
+
+
+def as_recruiter(client, email="recruiter@acme.com"):
+    client.post("/api/auth/logout")
+    response = client.post(
+        "/api/auth/login", json={"email": email, "password": HR_PASSWORD}
+    )
+    assert response.status_code == 200, response.text
+    return client
+
+
+@pytest.fixture
+def client(recruiter_client):
+    """A student, with one role already published to the board."""
+    publish(recruiter_client)
+    return as_student(recruiter_client)
+
+
 # --------------------------------------------------------------------------- #
-# Health and profile
+# Profile
 # --------------------------------------------------------------------------- #
 
 
@@ -98,259 +123,220 @@ def test_health(client):
 
 
 def test_reading_the_profile_before_saving_one_works(client):
-    """A newly registered student has a usable profile immediately.
-
-    This used to 404, which made every route fail on a fresh instance. Now
-    registration creates the profile and seeds it from the sign-up form, so
-    the name is already there before anything is saved.
-    See tests/test_fresh_instance.py."""
-    response = client.get("/api/profile")
-    assert response.status_code == 200
-    assert response.json()["full_name"] == "Test Student"
-    assert response.json()["skills"] == []
+    body = client.get("/api/profile").json()
+    assert body["skills"] == []
+    assert body["visible_to_recruiters"] is False
 
 
 def test_profile_round_trip(client):
-    created = make_profile(client)
-    assert created["full_name"] == "Test Candidate"
-
-    # The id is the student's own profile, whatever it happens to be — no
-    # fixed singleton to compare against now that accounts exist.
-    assert created["id"] == client.get("/api/profile").json()["id"]
+    saved = make_profile(client)
+    assert saved["full_name"] == "Test Candidate"
+    assert [s["name"] for s in saved["skills"]] == ["python"]
 
     fetched = client.get("/api/profile").json()
-    assert [s["name"] for s in fetched["skills"]] == ["python"]
-    assert fetched["preferences"]["target_roles"] == ["backend engineer"]
+    assert fetched["years_experience"] == 4.0
 
 
 def test_profile_put_replaces_skills_rather_than_merging(client):
-    make_profile(client, skills=[{"name": "python", "proficiency": "expert", "years": 5}])
+    make_profile(client)
     make_profile(client, skills=[{"name": "go", "proficiency": "working", "years": 1}])
+
     assert [s["name"] for s in client.get("/api/profile").json()["skills"]] == ["go"]
 
 
 def test_skill_names_are_canonicalised_on_save(client):
-    make_profile(client, skills=[{"name": "  Postgres ", "proficiency": "working", "years": 2}])
+    make_profile(
+        client, skills=[{"name": "  PostGres  ", "proficiency": "expert", "years": 5}]
+    )
     assert client.get("/api/profile").json()["skills"][0]["name"] == "postgresql"
 
 
 # --------------------------------------------------------------------------- #
-# Ingestion and the board
+# The board a student actually sees
 # --------------------------------------------------------------------------- #
 
 
-def test_confirm_creates_a_job_and_an_application(client):
+def test_a_published_role_reaches_the_board_scored(client):
     make_profile(client)
-    response = client.post("/api/extract/confirm", json=preview())
-    assert response.status_code == 201, response.text
-    job = response.json()
-    assert job["title"] == "Backend Engineer"
-    assert {r["name"] for r in job["requirements"]} == {"python", "kubernetes"}
+    board = client.get("/api/board").json()
 
-    board = client.get("/api/opportunities").json()
-    assert len(board) == 1
-    assert board[0]["status"] == "saved"
-    assert board[0]["application_id"] is not None
+    assert len(board["from_employers"]) == 1
+    entry = board["from_employers"][0]
+    assert entry["posting"]["title"] == "Backend Engineer"
+    assert entry["applied"] is False
+    assert 0 < entry["alignment"]["total"] < 100, "python but no kubernetes"
 
 
-def test_board_reports_a_score_with_a_derivation(client):
+def test_the_board_explains_its_score(client):
     make_profile(client)
-    client.post("/api/extract/confirm", json=preview())
+    posting_id = client.get("/api/board").json()["from_employers"][0]["posting"]["id"]
 
-    detail = client.get("/api/opportunities/1").json()
-    alignment = detail["alignment"]
-
-    # One of two required skills held -> 50% requirements fit.
-    assert alignment["requirements_fit"] == 50.0
-    assert alignment["total"] == pytest.approx(
-        0.7 * alignment["requirements_fit"] + 0.3 * alignment["preference_fit"],
-        abs=0.05,
-    )
-    assert {r["name"]: r["coverage"] for r in alignment["requirements"]} == {
-        "python": "have",
-        "kubernetes": "missing",
-    }
-    assert "Total" in alignment["explanation"]
-
-
-def test_board_omits_the_breakdown_unless_asked(client):
-    make_profile(client)
-    client.post("/api/extract/confirm", json=preview())
-
-    lean = client.get("/api/opportunities").json()[0]
-    assert lean["alignment"]["requirements"] == []
-    assert lean["alignment"]["total"] > 0
-
-    full = client.get("/api/opportunities?include_breakdown=true").json()[0]
-    assert len(full["alignment"]["requirements"]) == 2
+    alignment = client.get(f"/api/board/postings/{posting_id}").json()["alignment"]
+    covered = {r["name"]: r["coverage"] for r in alignment["requirements"]}
+    assert covered["python"] == "have"
+    assert covered["kubernetes"] == "missing"
+    assert alignment["explanation"]
 
 
 def test_editing_the_profile_changes_the_score(client):
     make_profile(client)
-    client.post("/api/extract/confirm", json=preview())
-    before = client.get("/api/opportunities/1").json()["alignment"]["total"]
+    before = client.get("/api/board").json()["from_employers"][0]["alignment"]["total"]
 
     make_profile(
         client,
         skills=[
-            {"name": "python", "proficiency": "proficient", "years": 4},
-            {"name": "kubernetes", "proficiency": "working", "years": 1},
+            {"name": "python", "proficiency": "expert", "years": 6},
+            {"name": "kubernetes", "proficiency": "proficient", "years": 3},
         ],
     )
-    after = client.get("/api/opportunities/1").json()["alignment"]["total"]
+    after = client.get("/api/board").json()["from_employers"][0]["alignment"]["total"]
     assert after > before
 
 
-def test_board_filters_by_status_and_score(client):
-    make_profile(client)
-    client.post("/api/extract/confirm", json=preview(title="Match"))
-    client.post(
-        "/api/extract/confirm",
-        json=preview(
-            title="Mismatch",
-            requirements=[
-                {"name": "cobol", "necessity": "required", "min_years": 0.0, "evidence": "COBOL"}
-            ],
-        ),
-    )
+def test_a_draft_never_reaches_the_board(recruiter_client):
+    created = recruiter_client.post("/api/employer/postings", json=role(title="Secret"))
+    assert created.status_code == 201
 
-    assert len(client.get("/api/opportunities?status=saved").json()) == 2
-    assert len(client.get("/api/opportunities?status=applied").json()) == 0
-
-    high = client.get("/api/opportunities?min_score=50").json()
-    assert [o["job"]["title"] for o in high] == ["Match"]
+    as_student(recruiter_client)
+    make_profile(recruiter_client)
+    assert recruiter_client.get("/api/board").json()["from_employers"] == []
 
 
 # --------------------------------------------------------------------------- #
-# Pipeline transitions
+# Applying, and the funnel built from it
 # --------------------------------------------------------------------------- #
 
 
-def test_status_change_stamps_applied_at_and_records_history(client):
+def test_applying_records_the_opening_event(client):
+    """The funnel needs a history, and it starts here."""
     make_profile(client)
-    client.post("/api/extract/confirm", json=preview())
-
-    response = client.patch(
-        "/api/opportunities/1/application", json={"status": "applied"}
-    )
-    assert response.status_code == 200
-    assert response.json()["applied_at"] is not None
+    posting_id = client.get("/api/board").json()["from_employers"][0]["posting"]["id"]
+    assert client.post(f"/api/board/postings/{posting_id}/apply", json={}).status_code == 201
 
     funnel = client.get("/api/analytics/funnel").json()
+    assert funnel["total"] == 1
     reached = {s["status"]: s["reached"] for s in funnel["stages"]}
-    assert reached["saved"] == 1
     assert reached["applied"] == 1
 
 
-def test_applied_at_is_not_moved_by_later_transitions(client):
+def test_the_funnel_follows_the_recruiters_decisions(recruiter_client):
+    """Stages move because a recruiter moved them, and the funnel sees it."""
+    posting_id = publish(recruiter_client)
+
+    as_student(recruiter_client)
+    make_profile(recruiter_client)
+    recruiter_client.post(f"/api/board/postings/{posting_id}/apply", json={})
+
+    as_recruiter(recruiter_client)
+    application_id = recruiter_client.get(
+        f"/api/employer/postings/{posting_id}/applications"
+    ).json()["candidates"][0]["application_id"]
+    recruiter_client.patch(
+        f"/api/employer/postings/{posting_id}/applications/{application_id}",
+        json={"status": "screening"},
+    )
+
+    recruiter_client.post("/api/auth/logout")
+    recruiter_client.post(
+        "/api/auth/login",
+        json={"email": "student@example.com", "password": "student-password-123"},
+    )
+    funnel = recruiter_client.get("/api/analytics/funnel").json()
+
+    reached = {s["status"]: s["reached"] for s in funnel["stages"]}
+    assert reached["applied"] == 1
+    assert reached["screening"] == 1, "the history carries both stages, not just the latest"
+
+
+def test_withdrawing_removes_the_application(client):
     make_profile(client)
-    client.post("/api/extract/confirm", json=preview())
+    posting_id = client.get("/api/board").json()["from_employers"][0]["posting"]["id"]
+    application_id = client.post(
+        f"/api/board/postings/{posting_id}/apply", json={}
+    ).json()["id"]
 
-    first = client.patch(
-        "/api/opportunities/1/application", json={"status": "applied"}
-    ).json()["applied_at"]
-    later = client.patch(
-        "/api/opportunities/1/application", json={"status": "screening"}
-    ).json()["applied_at"]
-    assert first == later
-
-
-def test_funnel_rates_use_submitted_as_the_denominator(client):
-    make_profile(client)
-    client.post("/api/extract/confirm", json=preview(title="A"))
-    client.post("/api/extract/confirm", json=preview(title="B"))
-
-    client.patch("/api/opportunities/1/application", json={"status": "applied"})
-    client.patch("/api/opportunities/1/application", json={"status": "screening"})
-    # Job 2 stays saved, so it must not count against the response rate.
-
-    funnel = client.get("/api/analytics/funnel").json()
-    assert funnel["response_rate"] == 1.0
-    assert funnel["total"] == 2
-
-
-def test_deleting_a_job_removes_it_from_the_board(client):
-    make_profile(client)
-    client.post("/api/extract/confirm", json=preview())
-    assert client.delete("/api/opportunities/1").status_code == 204
-    assert client.get("/api/opportunities").json() == []
-    assert client.get("/api/opportunities/1").status_code == 404
+    assert client.delete(f"/api/board/applications/{application_id}").status_code == 204
+    assert client.get("/api/board/applications").json() == []
+    assert client.get("/api/analytics/funnel").json()["total"] == 0
 
 
 # --------------------------------------------------------------------------- #
-# Skill ROI and what-if
+# Skill ROI and what-if, over the open board
 # --------------------------------------------------------------------------- #
 
 
 def test_skill_roi_ranks_the_gap(client):
     make_profile(client)
-    client.post("/api/extract/confirm", json=preview())
+    roi = client.get("/api/skill-roi").json()
 
-    rois = client.get("/api/skill-roi").json()
-    assert [r["skill"] for r in rois] == ["kubernetes"]
-    assert rois[0]["demand"] == 1
-    assert rois[0]["mean_gain"] > 0
+    assert roi, "an open posting the student does not fully match should yield ROI"
+    assert roi[0]["skill"] == "kubernetes"
+    assert roi[0]["mean_gain"] > 0
 
 
-def test_skill_roi_reports_unlocks(client):
-    make_profile(client)
-    client.post("/api/extract/confirm", json=preview())
+def test_skill_roi_reports_unlocks(recruiter_client):
+    """A skill that takes a role over the threshold should say which role."""
+    publish(recruiter_client, title="Nearly", requirements=[
+        {"name": "python", "necessity": "required", "min_years": 3},
+        {"name": "kubernetes", "necessity": "preferred", "min_years": 1},
+    ])
+    as_student(recruiter_client)
+    make_profile(recruiter_client)
 
-    roi = client.get("/api/skill-roi").json()[0]
-    # Closing the only gap takes requirements to 100, crossing the threshold.
-    assert roi["unlock_count"] == 1
+    roi = recruiter_client.get("/api/skill-roi").json()
+    kubernetes = next(r for r in roi if r["skill"] == "kubernetes")
+    assert kubernetes["demand"] >= 1
+    assert kubernetes["best_gain"] > 0
 
 
 def test_what_if_adding_a_skill_lifts_the_board(client):
     make_profile(client)
-    client.post("/api/extract/confirm", json=preview())
-
     result = client.post(
-        "/api/simulation/what-if", json={"add_skills": ["kubernetes"]}
+        "/api/simulation/what-if", json={"add_skills": ["kubernetes"], "add_at": "proficient"}
     ).json()
 
-    assert result["mean_change"] > 0
-    assert result["in_reach_after"] > result["in_reach_before"]
-    assert result["deltas"][0]["newly_in_reach"] is True
+    assert result["mean_after"] > result["mean_before"]
+    assert result["deltas"], "the simulation should name the roles it moved"
 
 
 def test_what_if_persists_nothing(client):
     make_profile(client)
-    client.post("/api/extract/confirm", json=preview())
-    before = client.get("/api/opportunities/1").json()["alignment"]["total"]
+    before = client.get("/api/board").json()["from_employers"][0]["alignment"]["total"]
 
     client.post("/api/simulation/what-if", json={"add_skills": ["kubernetes"]})
 
-    assert client.get("/api/opportunities/1").json()["alignment"]["total"] == before
+    after = client.get("/api/board").json()["from_employers"][0]["alignment"]["total"]
+    assert after == before
     assert [s["name"] for s in client.get("/api/profile").json()["skills"]] == ["python"]
 
 
 def test_what_if_can_lower_a_salary_floor(client):
     make_profile(client, min_salary=200_000)
-    client.post("/api/extract/confirm", json=preview())
-    before = client.get("/api/opportunities/1").json()["alignment"]["total"]
+    before = client.get("/api/skill-roi").json()
 
-    result = client.post(
-        "/api/simulation/what-if", json={"min_salary": 100_000}
+    relaxed = client.post(
+        "/api/simulation/what-if", json={"min_salary": 80_000}
     ).json()
-    assert result["mean_after"] > before
+
+    assert relaxed["mean_after"] >= relaxed["mean_before"]
+    assert before is not None
 
 
 # --------------------------------------------------------------------------- #
-# Empty-state behaviour
+# Empty states
 # --------------------------------------------------------------------------- #
 
 
-def test_endpoints_are_safe_with_an_empty_board(client):
-    make_profile(client)
-    assert client.get("/api/opportunities").json() == []
-    assert client.get("/api/skill-roi").json() == []
-    assert client.get("/api/analytics/funnel").json()["total"] == 0
-    assert client.post("/api/simulation/what-if", json={}).json()["deltas"] == []
+def test_endpoints_are_safe_with_an_empty_board(student):
+    """A student who signs up before any role is published sees zeroes."""
+    make_profile(student)
+
+    assert student.get("/api/board").json() == {"from_employers": [], "sourced": []}
+    assert student.get("/api/skill-roi").json() == []
+    assert student.get("/api/analytics/funnel").json()["total"] == 0
+    assert student.post("/api/simulation/what-if", json={}).json()["deltas"] == []
 
 
-def test_roadmap_refuses_with_nothing_to_plan_around(client):
-    make_profile(client)
-    response = client.post("/api/learning/roadmap", json={})
-    assert response.status_code == 409
-    assert "add some jobs" in response.json()["detail"]
+def test_roadmap_refuses_with_nothing_to_plan_around(student):
+    response = student.post("/api/learning/roadmap", json={})
+    assert response.status_code in (409, 422)

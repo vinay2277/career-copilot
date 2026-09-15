@@ -43,7 +43,7 @@ def test_registration_creates_exactly_one_profile(fresh):
     "path",
     [
         "/api/profile",
-        "/api/opportunities",
+        "/api/board",
         "/api/skill-roi",
         "/api/analytics/funnel",
         "/api/resume",
@@ -58,7 +58,7 @@ def test_every_read_works_immediately_after_signing_up(fresh, path):
 
 def test_the_board_starts_empty_rather_than_erroring(fresh):
     client, _ = fresh
-    assert client.get("/api/opportunities").json() == []
+    assert client.get("/api/board").json() == {"from_employers": [], "sourced": []}
     assert client.get("/api/skill-roi").json() == []
     assert client.get("/api/analytics/funnel").json()["total"] == 0
 

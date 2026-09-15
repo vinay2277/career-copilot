@@ -28,11 +28,9 @@ from app.api.routes import (
     auth,
     board,
     employer,
-    extract,
     interview,
     learning,
     modules,
-    opportunities,
     profile,
     resume,
     simulation,
@@ -195,10 +193,13 @@ app.include_router(auth.router)
 # rather than repeated in each handler — a route added later cannot arrive
 # unprotected by accident. Individually expensive routes carry an extra AI
 # limit of their own.
+# `extract` and `opportunities` are deliberately absent. Reading a job out of
+# a URL, a PDF or a screenshot is how a role gets onto the board, and putting
+# roles on the board is a recruiter's job — the student side is the board
+# itself, not a private scrapbook beside it. The routes still exist under
+# /api/employer, and the tables keep the rows anybody already had.
 for module in (
     profile,
-    extract,
-    opportunities,
     simulation,
     analytics,
     resume,

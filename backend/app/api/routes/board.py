@@ -20,6 +20,7 @@ from app.models import (
     JobPosting,
     PostingApplication,
     PostingSource,
+    PostingStatusEvent,
     Profile,
 )
 from app.schemas_posting import (
@@ -55,7 +56,7 @@ def _entry(
     *,
     with_breakdown: bool,
 ) -> BoardEntryOut:
-    from app.api.routes.opportunities import _alignment_out
+    from app.services.postings import alignment_out as _alignment_out
 
     result = score_posting(db, profile, posting, aliases)
     alignment = _alignment_out(result)
@@ -197,6 +198,13 @@ def apply_to_posting(
         cover_note=payload.cover_note,
     )
     db.add(application)
+    db.flush()
+    # The opening entry in this application's history. Without it the funnel
+    # cannot tell an application submitted this morning from one submitted in
+    # March, because `applied_at` alone says when but never what changed.
+    application.events.append(
+        PostingStatusEvent(to_status=application.status, occurred_at=application.applied_at)
+    )
     db.commit()
     db.refresh(application)
 

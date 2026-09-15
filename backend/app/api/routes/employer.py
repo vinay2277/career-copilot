@@ -14,7 +14,7 @@ import logging
 import re
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,7 @@ from app.api.deps import (
     require_hr,
     require_verified_organization,
 )
+from app.core.config import settings
 from app.db.session import get_db
 from app.models import (
     Account,
@@ -36,8 +37,10 @@ from app.models import (
     PostingRequirement,
     PostingSource,
     PostingStatus,
+    PostingStatusEvent,
     Profile,
 )
+from app.models.enums import SourceKind
 from app.schemas_posting import (
     ApplicationDecisionIn,
     CandidateListOut,
@@ -51,6 +54,7 @@ from app.schemas_posting import (
     PostingParseIn,
     PostingRequirementOut,
     PostingSummaryOut,
+    PostingUrlIn,
 )
 from app.services.ingestion import parsers
 from app.services.ingestion.pipeline import ingest
@@ -86,24 +90,18 @@ def _owned(db: Session, posting_id: int, organization: Organization) -> JobPosti
 # --------------------------------------------------------------------------- #
 
 
-@router.post("/postings/parse", response_model=PostingDraftOut, dependencies=AI_ROUTE)
-def parse_description(
-    payload: PostingParseIn,
-    organization: Organization = Depends(require_verified_organization),
-) -> PostingDraftOut:
-    """Turn a pasted job description into a draft.
+def _draft_from(organization: Organization, **source) -> PostingDraftOut:
+    """Run the ingestion pipeline over one source and shape it as a draft.
 
-    Reuses the student-side ingestion pipeline wholesale — extract, then
-    validate — so a role a recruiter types in and one the pipeline sourced are
-    read on identical terms and scored against identical requirements.
+    Extract, then validate — the same pipeline that reads the roles this
+    platform sources itself, so a role a recruiter pastes in and one we found
+    are read on identical terms and scored against identical requirements.
 
     Returns a draft rather than saving: the recruiter confirms first, which is
     what makes the validator's confidence worth computing.
     """
-    from app.models.enums import SourceKind
-
     try:
-        result = ingest(source_kind=SourceKind.TEXT, text=payload.text)
+        result = ingest(**source)
     except parsers.ParseError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
     except AgentError as e:
@@ -141,6 +139,67 @@ def parse_description(
         unverified_fields=result.report.unverified_fields,
         validation_notes=result.report.notes,
     )
+
+
+async def _upload_bytes(file: UploadFile) -> bytes:
+    """Read an upload, refusing one that is empty or over the limit."""
+    data = await file.read()
+    if len(data) > settings.max_upload_bytes:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"File is larger than the {settings.max_upload_mb} MB limit.",
+        )
+    if not data:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "That file is empty.")
+    return data
+
+
+@router.post("/postings/parse", response_model=PostingDraftOut, dependencies=AI_ROUTE)
+def parse_text(
+    payload: PostingParseIn,
+    organization: Organization = Depends(require_verified_organization),
+) -> PostingDraftOut:
+    """A pasted job description."""
+    return _draft_from(organization, source_kind=SourceKind.TEXT, text=payload.text)
+
+
+@router.post(
+    "/postings/parse/url", response_model=PostingDraftOut, dependencies=AI_ROUTE
+)
+def parse_url(
+    payload: PostingUrlIn,
+    organization: Organization = Depends(require_verified_organization),
+) -> PostingDraftOut:
+    """A link to the role on the company's own careers site.
+
+    The usual case for a recruiter: the posting already exists somewhere, and
+    retyping it into this form is work nobody should have to do twice.
+    """
+    return _draft_from(organization, source_kind=SourceKind.URL, url=payload.url)
+
+
+@router.post(
+    "/postings/parse/pdf", response_model=PostingDraftOut, dependencies=AI_ROUTE
+)
+async def parse_pdf(
+    file: UploadFile = File(...),
+    organization: Organization = Depends(require_verified_organization),
+) -> PostingDraftOut:
+    """A job description as a PDF, which is how most of them arrive."""
+    data = await _upload_bytes(file)
+    return _draft_from(organization, source_kind=SourceKind.PDF, file_bytes=data)
+
+
+@router.post(
+    "/postings/parse/image", response_model=PostingDraftOut, dependencies=AI_ROUTE
+)
+async def parse_image(
+    file: UploadFile = File(...),
+    organization: Organization = Depends(require_verified_organization),
+) -> PostingDraftOut:
+    """A screenshot. Read by OCR first, then by the same pipeline."""
+    data = await _upload_bytes(file)
+    return _draft_from(organization, source_kind=SourceKind.IMAGE, file_bytes=data)
 
 
 # --------------------------------------------------------------------------- #
@@ -573,7 +632,11 @@ def decide_on_candidate(
             "to decline it.",
         )
 
+    previous = application.status
     application.status = payload.status
+    application.events.append(
+        PostingStatusEvent(from_status=previous, to_status=payload.status)
+    )
     db.commit()
     logger.info(
         "org %s moved application %s to %s",

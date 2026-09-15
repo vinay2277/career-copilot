@@ -30,7 +30,12 @@ from app.models.enums import (
     SourceKind,
 )
 from app.models.job import JobPost, JobRequirement, SkillAlias
-from app.models.posting import JobPosting, PostingApplication, PostingRequirement
+from app.models.posting import (
+    JobPosting,
+    PostingApplication,
+    PostingRequirement,
+    PostingStatusEvent,
+)
 from app.models.profile import Preferences, Profile, ProfileSkill, Resume
 
 __all__ = [
@@ -56,6 +61,7 @@ __all__ = [
     "PostingRequirement",
     "PostingSource",
     "PostingStatus",
+    "PostingStatusEvent",
     "Preferences",
     "Proficiency",
     "Profile",

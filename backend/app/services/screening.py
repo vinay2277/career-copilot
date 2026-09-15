@@ -36,6 +36,7 @@ from app.models import (
     PostingApplication,
     Profile,
 )
+from app.services.postings import posting_text_for_agents
 
 logger = logging.getLogger(__name__)
 
@@ -60,29 +61,6 @@ def existing_session(db: Session, application_id: int) -> InterviewSession | Non
             InterviewSession.application_id == application_id
         )
     ).scalar_one_or_none()
-
-
-def posting_text(posting: JobPosting) -> str:
-    """What the question generator reads.
-
-    Prefers the original description over the extracted fields: the generator
-    writes better questions from prose than from a requirement list, and the
-    list is already reflected in the requirements it is told to probe.
-    """
-    if posting.raw_text and len(posting.raw_text) > 80:
-        return posting.raw_text
-    parts = [
-        f"{posting.title} at {posting.company_name}",
-        posting.description or "",
-        "Requirements: "
-        + ", ".join(
-            f"{r.name}"
-            + (f" ({r.min_years:g}+ years)" if r.min_years else "")
-            + f" [{r.necessity.value}]"
-            for r in posting.requirements
-        ),
-    ]
-    return "\n\n".join(p for p in parts if p)
 
 
 def start(
@@ -117,7 +95,7 @@ def start(
         probe = [r.name for r in posting.requirements]
 
     generated = generate_questions(
-        job_text=posting_text(posting),
+        job_text=posting_text_for_agents(posting),
         kind=InterviewKind.SCREENING.value,
         missing_skills=probe[:6],
         count=count,
@@ -199,7 +177,7 @@ def submit(
             "tells the employer nothing and cannot be retaken."
         )
 
-    result = grade_screening(job_text=posting_text(posting), answers=payload)
+    result = grade_screening(job_text=posting_text_for_agents(posting), answers=payload)
 
     by_position = {g.position: g for g in result.grades}
     for turn in turns:

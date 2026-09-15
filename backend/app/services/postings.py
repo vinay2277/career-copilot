@@ -1,10 +1,9 @@
 """Scoring and querying published postings.
 
-The scoring here is the existing alignment engine with nothing changed — a
-posting's requirements and a student's skills are the same shapes the private
-tracker already feeds it. That reuse is the point: a student sees the same
-auditable derivation on a platform posting as on one they pasted themselves,
-and phase 5's candidate search is this function with the loop inverted.
+The scoring here is the alignment engine with nothing changed. That reuse is
+the point: the score a student sees on the board, the score a recruiter ranks
+applicants by, and the score candidate search sorts on are all the same
+function, so none of them can disagree about what a good fit is.
 """
 
 from __future__ import annotations
@@ -22,6 +21,7 @@ from app.models import (
     Profile,
 )
 from app.models.enums import Necessity
+from app.schemas import AlignmentOut
 from app.services.analytics.alignment import (
     AlignmentResult,
     JobFacts,
@@ -148,3 +148,69 @@ def requirements_from_extraction(extracted) -> list[PostingRequirement]:
             )
         )
     return rows
+
+
+def posting_for_student(db, posting_id: int):
+    """A posting a student may prepare against, or None.
+
+    Any open posting — preparing for a role you have not applied to yet is the
+    normal case, and gating it behind having applied would put the interview
+    practice after the interview.
+    """
+    from app.models import JobPosting
+
+    posting = db.get(JobPosting, posting_id)
+    if posting is None or not posting.is_open():
+        return None
+    return posting
+
+
+def posting_text_for_agents(posting) -> str:
+    """The prose an agent should read about a role.
+
+    Prefers what was extracted from; falls back to assembling the structured
+    fields, because a posting typed into the form by hand has no source text
+    and would otherwise reach the agent as an empty string.
+    """
+    if posting.raw_text and len(posting.raw_text) > 80:
+        return posting.raw_text
+    parts = [
+        f"{posting.title} at {posting.company_name}",
+        posting.description or "",
+        "Requirements: "
+        + ", ".join(
+            r.name + (f" ({r.min_years:g}+ years)" if r.min_years else "")
+            for r in posting.requirements
+        ),
+    ]
+    return "\n\n".join(p for p in parts if p)
+
+
+def alignment_out(result: AlignmentResult) -> AlignmentOut:
+    """Render a scoring result for the API.
+
+    Lived in the student's job-tracker routes until those were removed. It is
+    the board's now, and belongs beside the other posting services rather than
+    in a route module nothing reaches.
+    """
+    return AlignmentOut(
+        total=result.total,
+        requirements_fit=result.requirements_fit,
+        preference_fit=result.preference_fit,
+        requirements=[
+            {
+                "name": r.name,
+                "necessity": r.necessity,
+                "coverage": r.coverage,
+                "weight": r.weight,
+                "credit": r.credit,
+                "reason": r.reason,
+            }
+            for r in result.requirements
+        ],
+        facets=[
+            {"name": f.name, "matched": f.matched, "detail": f.detail}
+            for f in result.facets
+        ],
+        explanation=result.explain(),
+    )
