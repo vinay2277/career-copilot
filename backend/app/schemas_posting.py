@@ -63,9 +63,10 @@ class PostingDraftIn(BaseModel):
     certifications: list[str] = Field(default_factory=list)
     total_years_experience: float | None = Field(default=None, ge=0, le=60)
     closes_at: datetime | None = None
-    #: Ask applicants a short AI-run screening round. Off by default: every
-    #: interview spends model credit, so switching it on is a cost decision.
-    interview_required: bool = False
+    #: Ask applicants a short AI-run screening round. On by default — every
+    #: candidate answering for themselves is the point of the platform — but
+    #: switchable, because each round spends model credit.
+    interview_required: bool = True
     interview_question_count: int = Field(default=4, ge=2, le=8)
     requirements: list[PostingRequirementIn] = Field(default_factory=list)
     #: The text the requirements were read from, kept for re-extraction and for

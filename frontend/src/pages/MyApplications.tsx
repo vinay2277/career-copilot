@@ -67,7 +67,7 @@ export default function MyApplications({
                       <strong>{posting.title}</strong>
                       {posting.interview_required && (
                         <div className="muted small">
-                          this employer asks for a short interview
+                          this employer asks every applicant a short interview
                         </div>
                       )}
                       {application.alignment_detail && (

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import {
   Card,
@@ -97,6 +98,7 @@ function PostingDetail({
   const detail = useAsync(() => api.posting(postingId), [postingId]);
   const [note, setNote] = useState("");
   const apply = useAction();
+  const navigate = useNavigate();
 
   if (detail.loading) return <Spinner />;
   if (detail.error) return <ErrorNote message={detail.error} />;
@@ -106,10 +108,21 @@ function PostingDetail({
 
   const submit = async () => {
     const result = await apply.run(() => api.apply(postingId, note));
-    if (result) {
-      detail.reload();
-      onApplied();
+    if (!result) return;
+
+    // Straight into the interview when the role asks for one.
+    //
+    // Leaving the applicant on a "you've applied" screen with the round
+    // waiting somewhere else is how somebody applies, sees nothing happen, and
+    // assumes the interview will arrive by email. Applying and interviewing
+    // are one act from their side, so the flow should be one too.
+    if (posting.interview_required) {
+      navigate(`/applications/${result.id}/interview`);
+      return;
     }
+
+    detail.reload();
+    onApplied();
   };
 
   return (
@@ -170,6 +183,22 @@ function PostingDetail({
 
         <div>
           <Card title={applied ? "You've applied" : "Apply"}>
+            {posting.interview_required && !applied && (
+              <div className="note note-info">
+                This employer asks every applicant a few questions about the
+                role. You'll go straight to them after applying — it takes a few
+                minutes and you only get one attempt, so apply when you have
+                time to finish.
+              </div>
+            )}
+            {posting.interview_required && applied && (
+              <button
+                className="primary"
+                onClick={() => navigate("/applications")}
+              >
+                Go to your interview
+              </button>
+            )}
             {applied ? (
               <p className="muted small">
                 Your application was recorded with the alignment score above.

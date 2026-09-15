@@ -99,10 +99,15 @@ class JobPosting(Base):
     extraction_confidence: Mapped[float] = mapped_column(Float, default=1.0)
 
     # --- Screening interview ---
-    # Off by default. Every interview costs two model calls, so turning this on
-    # for a role that will draw hundreds of applicants is a spending decision
-    # the recruiter should make deliberately rather than inherit.
-    interview_required: Mapped[bool] = mapped_column(default=False)
+    # On by default: every applicant sits a short round. That is the platform's
+    # whole proposition — a recruiter gets candidates who have already answered
+    # for themselves, not a pile of profiles.
+    #
+    # It stays a column rather than a constant because it still has to be
+    # switchable. Each interview costs two model calls, so a role expecting
+    # thousands of applicants is a spending decision somebody may need to make
+    # differently, and a draft nobody will apply to needs no round at all.
+    interview_required: Mapped[bool] = mapped_column(default=True)
     #: Capped low on purpose — see `MAX_INTERVIEW_QUESTIONS`. Five good
     #: questions tell you more than twelve that nobody finishes.
     interview_question_count: Mapped[int] = mapped_column(Integer, default=4)

@@ -121,13 +121,24 @@ def test_the_posting_says_it_screens(api, db_session):
     assert created["interview_question_count"] == 3
 
 
-def test_interviews_are_off_unless_asked_for(api, db_session):
-    """Every round spends model credit, so it must never be the default."""
+def test_every_role_screens_unless_turned_off(api, db_session):
+    """Every applicant answering for themselves is the point of the platform.
+
+    A recruiter can still turn it off for a role where it does not fit, but
+    they have to choose to — the default is that candidates are heard.
+    """
     register_hr(api)
     verify_organization(db_session)
-    created = api.post("/api/employer/postings", json=DRAFT).json()
 
-    assert created["interview_required"] is False
+    on_by_default = api.post("/api/employer/postings", json=DRAFT).json()
+    assert on_by_default["interview_required"] is True
+    assert on_by_default["interview_question_count"] == 4
+
+    turned_off = api.post(
+        "/api/employer/postings",
+        json={**DRAFT, "title": "No round", "interview_required": False},
+    ).json()
+    assert turned_off["interview_required"] is False
 
 
 def test_start_generates_questions_without_revealing_the_answers(
@@ -251,7 +262,9 @@ def test_another_student_cannot_touch_the_round(api, applied, stub_agents):
 def test_a_role_that_does_not_screen_refuses_to_start_one(api, db_session):
     register_hr(api)
     verify_organization(db_session)
-    posting_id = api.post("/api/employer/postings", json=DRAFT).json()["id"]
+    posting_id = api.post(
+        "/api/employer/postings", json={**DRAFT, "interview_required": False}
+    ).json()["id"]
     api.post(f"/api/employer/postings/{posting_id}/publish")
 
     api.post("/api/auth/logout")

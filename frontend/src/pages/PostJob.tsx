@@ -23,7 +23,7 @@ export default function PostJob({ onPublished }: { onPublished: () => void }) {
   const parse = useAction();
   const publish = useAction();
 
-  const [interview, setInterview] = useState(false);
+  const [interview, setInterview] = useState(true);
   const [questionCount, setQuestionCount] = useState(4);
 
   const patch = <K extends keyof PostingDraft>(key: K, value: PostingDraft[K]) =>
@@ -306,7 +306,8 @@ export default function PostJob({ onPublished }: { onPublished: () => void }) {
             <p className="muted small">
               {interview ? (
                 <>
-                  Questions are written from this description and from what each
+                  Every applicant answers a few questions before you see them.
+                  They are written from this description and from what each
                   candidate's profile left unanswered. You get a score, a
                   recommendation and the full transcript — <strong>it does not
                   shortlist or reject anyone</strong>, you do.{" "}
@@ -315,7 +316,10 @@ export default function PostJob({ onPublished }: { onPublished: () => void }) {
                   hundred times one interview.
                 </>
               ) : (
-                <>Off. Candidates apply and are scored on their profile alone.</>
+                <>
+                  <strong>Off.</strong> Candidates apply and are scored on their
+                  profile alone — you will not hear them answer for themselves.
+                </>
               )}
             </p>
           </div>
