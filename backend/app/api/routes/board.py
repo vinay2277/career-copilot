@@ -13,9 +13,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_profile
+from app.api.deps import AI_ROUTE, get_profile
 from app.db.session import get_db
-from app.models import JobPosting, PostingApplication, PostingSource, Profile
+from app.models import (
+    InterviewSession,
+    JobPosting,
+    PostingApplication,
+    PostingSource,
+    Profile,
+)
 from app.schemas_posting import (
     ApplicationOut,
     ApplyIn,
@@ -23,7 +29,11 @@ from app.schemas_posting import (
     BoardOut,
     MyApplicationOut,
     PostingOut,
+    ScreeningOut,
+    ScreeningSubmitIn,
+    ScreeningTurnOut,
 )
+from app.services import screening
 from app.services.postings import (
     alignment_summary,
     open_postings,
@@ -241,3 +251,129 @@ def withdraw(
 
     db.delete(application)
     db.commit()
+
+
+# --------------------------------------------------------------------------- #
+# Screening interviews
+# --------------------------------------------------------------------------- #
+
+
+def _own_application(
+    db: Session, application_id: int, profile: Profile
+) -> PostingApplication:
+    application = db.get(PostingApplication, application_id)
+    if application is None or application.profile_id != profile.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such application.")
+    return application
+
+
+def _screening_out(
+    session: InterviewSession, posting: JobPosting, *, include_feedback: bool
+) -> ScreeningOut:
+    """Render a round for one side or the other.
+
+    `include_feedback` is false while the round is still open. Showing the
+    candidate what a strong answer contains before they answer would make the
+    score measure reading comprehension.
+    """
+    return ScreeningOut(
+        id=session.id,
+        application_id=session.application_id,
+        posting_title=posting.title,
+        overall_score=session.overall_score,
+        summary=session.summary if include_feedback else None,
+        completed_at=session.completed_at,
+        turns=[
+            ScreeningTurnOut(
+                position=t.position,
+                question=t.question,
+                answer=t.answer,
+                score=t.score if include_feedback else None,
+                feedback=t.feedback if include_feedback else None,
+                probes_skill=t.probes_skill,
+            )
+            for t in sorted(session.turns, key=lambda t: t.position)
+        ],
+    )
+
+
+@router.post(
+    "/applications/{application_id}/interview",
+    response_model=ScreeningOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=AI_ROUTE,
+)
+def start_interview(
+    application_id: int,
+    db: Session = Depends(get_db),
+    profile: Profile = Depends(get_profile),
+) -> ScreeningOut:
+    """Open the screening round for an application that requires one."""
+    application = _own_application(db, application_id, profile)
+    posting = db.get(JobPosting, application.posting_id)
+    if posting is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such posting.")
+    if not posting.interview_required:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "This role does not ask for an interview."
+        )
+
+    try:
+        session = screening.start(db, application, posting, profile)
+    except screening.ScreeningError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+
+    return _screening_out(session, posting, include_feedback=False)
+
+
+@router.get("/applications/{application_id}/interview", response_model=ScreeningOut)
+def read_interview(
+    application_id: int,
+    db: Session = Depends(get_db),
+    profile: Profile = Depends(get_profile),
+) -> ScreeningOut:
+    """The round as it stands — questions, and the result once submitted."""
+    application = _own_application(db, application_id, profile)
+    session = screening.existing_session(db, application.id)
+    if session is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "You have not started this interview yet."
+        )
+
+    posting = db.get(JobPosting, application.posting_id)
+    return _screening_out(
+        session, posting, include_feedback=session.completed_at is not None
+    )
+
+
+@router.post(
+    "/applications/{application_id}/interview/submit",
+    response_model=ScreeningOut,
+    dependencies=AI_ROUTE,
+)
+def submit_interview(
+    application_id: int,
+    payload: ScreeningSubmitIn,
+    db: Session = Depends(get_db),
+    profile: Profile = Depends(get_profile),
+) -> ScreeningOut:
+    """Submit every answer at once and get the round graded.
+
+    One submission, one grading pass. There is no going back afterwards — the
+    employer reads this, and a round you could retake until the number suited
+    you would not be worth their reading.
+    """
+    application = _own_application(db, application_id, profile)
+    session = screening.existing_session(db, application.id)
+    if session is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Start the interview before submitting it."
+        )
+
+    posting = db.get(JobPosting, application.posting_id)
+    try:
+        session = screening.submit(db, session, posting, payload.answers)
+    except screening.ScreeningError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+
+    return _screening_out(session, posting, include_feedback=True)

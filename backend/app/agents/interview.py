@@ -184,3 +184,90 @@ def summarize_session(graded: list[dict]) -> SessionSummary:
         output_model=SessionSummary,
         effort="medium",
     )
+
+
+# --------------------------------------------------------------------------- #
+# Screening interviews
+# --------------------------------------------------------------------------- #
+
+SCREENING_SYSTEM = """\
+You grade a complete screening interview in one pass — every answer, then the \
+round as a whole. A recruiter reads your output to decide who to speak to.
+
+Score each answer 0-100 on what was actually said. The anchors are the same as \
+a single-answer grade:
+- 85-100: answers the question, specific, evidenced, appropriately scoped.
+- 70-85: solid and relevant, thin on specifics or missing one dimension.
+- 50-70: on topic but vague, generic, or answering an adjacent question.
+- 25-50: barely engages the question, or is confidently wrong.
+- 0-25: no answer, or answers something else entirely.
+
+Grading a whole round at once has one advantage and one trap. The advantage: \
+you can see patterns across answers, and a pattern is worth more to a \
+recruiter than six separate notes. The trap: letting a strong first answer \
+lift the rest, or a weak one drag them down. Grade each on its own evidence, \
+then look across them.
+
+`overall_score` is your judgment, not a mean. Five adequate answers and one \
+that reveals the candidate cannot do the core task do not average out.
+
+`recommendation` is written for the recruiter, in two or three sentences. Say \
+what this person demonstrably can do and where the round left doubt. Name the \
+evidence — quote the phrase that decided it. Never state a hiring decision and \
+never say whether to reject: the recruiter decides, and your job is to give \
+them something specific enough to argue with.
+
+`strengths` and `concerns` are at most three each, concrete, drawn from what \
+was said rather than from the candidate's claimed skills.
+
+Do not soften a weak round, and do not let a confident tone stand in for an \
+answer. Do not speculate about the person beyond the transcript — not their \
+potential, not their attitude, and nothing about who they are.\
+"""
+
+
+class ScreeningAnswerGrade(BaseModel):
+    position: int = Field(description="1-based index of the question graded.")
+    score: float = Field(ge=0.0, le=100.0)
+    feedback: str
+    answered_the_question: bool = True
+
+
+class ScreeningResult(BaseModel):
+    grades: list[ScreeningAnswerGrade]
+    overall_score: float = Field(ge=0.0, le=100.0)
+    #: Written for the recruiter, not the candidate.
+    recommendation: str
+    strengths: list[str] = Field(default_factory=list, max_length=3)
+    concerns: list[str] = Field(default_factory=list, max_length=3)
+
+
+def grade_screening(
+    job_text: str,
+    answers: list[dict],
+) -> ScreeningResult:
+    """Grade a whole screening round in a single call.
+
+    One call rather than one per answer, plus a third to summarize. That is not
+    only cheaper — it is the only way the model can see the round as a round,
+    which is what the recruiter is actually asking about. `answers` is a list of
+    `{position, question, looking_for, answer}` dicts.
+    """
+    transcript = "\n\n".join(
+        f"<question position=\"{a['position']}\">\n{a['question']}\n"
+        f"  <strong_answer_contains>{a['looking_for']}</strong_answer_contains>\n"
+        f"  <candidate_answer>{a['answer'] or '(no answer given)'}</candidate_answer>\n"
+        "</question>"
+        for a in answers
+    )
+    user = (
+        f"<role>\n{job_text}\n</role>\n\n"
+        f"<transcript>\n{transcript}\n</transcript>\n\n"
+        "Grade every question, then the round."
+    )
+    return structured_call(
+        system=SCREENING_SYSTEM,
+        user=user,
+        output_model=ScreeningResult,
+        effort="high",
+    )

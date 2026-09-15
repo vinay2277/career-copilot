@@ -74,6 +74,8 @@ export interface Posting {
   total_years_experience: number | null;
   source_url: string | null;
   requirements: PostingRequirement[];
+  interview_required: boolean;
+  interview_question_count: number;
   closes_at: string | null;
   created_at: string;
 }
@@ -151,6 +153,8 @@ export interface PostingPayload {
   certifications?: string[];
   total_years_experience?: number | null;
   closes_at?: string | null;
+  interview_required?: boolean;
+  interview_question_count?: number;
   requirements: PostingRequirement[];
   raw_text?: string;
 }
@@ -184,6 +188,15 @@ export interface Candidate {
   partial: string[];
   missing: string[];
   skills: string[];
+
+  /**
+   * Null when the role asks for no interview, or they have not sat it yet.
+   * A second, independent signal beside the alignment score — neither of them
+   * moves a candidate anywhere on its own.
+   */
+  interview_status: "required" | "in_progress" | "completed" | null;
+  interview_score: number | null;
+  interview_summary: string | null;
 }
 
 export interface CandidateList {
@@ -568,3 +581,88 @@ export interface LearningPath {
 
 /** The alignment score at which a job counts as in reach. Matches skill_roi.py. */
 export const UNLOCK_THRESHOLD = 70;
+
+// --------------------------------------------------------------------------
+// Screening interviews
+// --------------------------------------------------------------------------
+
+export interface ScreeningTurn {
+  position: number;
+  question: string;
+  answer: string | null;
+  score: number | null;
+  /** Withheld until the round is submitted. */
+  feedback: string | null;
+  probes_skill: string | null;
+}
+
+export interface Screening {
+  id: number;
+  application_id: number | null;
+  posting_title: string;
+  overall_score: number | null;
+  summary: string | null;
+  completed_at: string | null;
+  turns: ScreeningTurn[];
+}
+
+// --------------------------------------------------------------------------
+// The Gen AI course
+// --------------------------------------------------------------------------
+
+export interface ModuleRow {
+  slug: string;
+  position: number;
+  title: string;
+  summary: string;
+  minutes: number;
+  objectives: string[];
+  question_count: number;
+  pass_mark: number;
+  locked: boolean;
+  passed: boolean;
+  best_score: number;
+  attempts: number;
+  completed_at: string | null;
+}
+
+export interface ModuleQuestion {
+  index: number;
+  prompt: string;
+  options: string[];
+}
+
+export interface ModuleDetail {
+  slug: string;
+  position: number;
+  title: string;
+  summary: string;
+  minutes: number;
+  objectives: string[];
+  body: string;
+  pass_mark: number;
+  questions: ModuleQuestion[];
+  passed: boolean;
+  best_score: number;
+  attempts: number;
+}
+
+export interface QuestionResult {
+  index: number;
+  chosen: number | null;
+  correct_option: number;
+  correct: boolean;
+  explanation: string;
+}
+
+export interface ModuleAttempt {
+  slug: string;
+  score: number;
+  total: number;
+  pass_mark: number;
+  passed: boolean;
+  /** This attempt failed but an earlier one passed — the pass stands. */
+  already_passed: boolean;
+  results: QuestionResult[];
+  unlocked_module: { slug: string; position: number; title: string } | null;
+}

@@ -23,6 +23,9 @@ export default function PostJob({ onPublished }: { onPublished: () => void }) {
   const parse = useAction();
   const publish = useAction();
 
+  const [interview, setInterview] = useState(false);
+  const [questionCount, setQuestionCount] = useState(4);
+
   const patch = <K extends keyof PostingDraft>(key: K, value: PostingDraft[K]) =>
     setDraft((d) => (d ? { ...d, [key]: value } : d));
 
@@ -41,6 +44,8 @@ export default function PostJob({ onPublished }: { onPublished: () => void }) {
     certifications: d.certifications,
     total_years_experience: d.total_years_experience,
     requirements: d.requirements,
+    interview_required: interview,
+    interview_question_count: questionCount,
     raw_text: d.raw_text,
   });
 
@@ -273,6 +278,47 @@ export default function PostJob({ onPublished }: { onPublished: () => void }) {
               </ul>
             </>
           )}
+
+          <div className="screening-toggle">
+            <div className="checkbox">
+              <input
+                id="interview-required"
+                type="checkbox"
+                checked={interview}
+                onChange={(e) => setInterview(e.target.checked)}
+              />
+              <label htmlFor="interview-required" style={{ margin: 0 }}>
+                Ask applicants a short screening interview
+              </label>
+            </div>
+            {interview && (
+              <label style={{ maxWidth: "160px" }}>
+                Questions
+                <input
+                  type="number"
+                  min={2}
+                  max={8}
+                  value={questionCount}
+                  onChange={(e) => setQuestionCount(Number(e.target.value))}
+                />
+              </label>
+            )}
+            <p className="muted small">
+              {interview ? (
+                <>
+                  Questions are written from this description and from what each
+                  candidate's profile left unanswered. You get a score, a
+                  recommendation and the full transcript — <strong>it does not
+                  shortlist or reject anyone</strong>, you do.{" "}
+                  <strong>This costs money:</strong> two model calls per
+                  applicant, so a role that draws two hundred people costs two
+                  hundred times one interview.
+                </>
+              ) : (
+                <>Off. Candidates apply and are scored on their profile alone.</>
+              )}
+            </p>
+          </div>
 
           <div className="inline" style={{ marginTop: "1rem" }}>
             <button

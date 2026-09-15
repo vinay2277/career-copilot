@@ -98,6 +98,18 @@ function CandidateRow({
           )}
         </td>
         <td>
+          {candidate.interview_status === "completed" &&
+          candidate.interview_score != null ? (
+            <ScoreBadge score={candidate.interview_score} />
+          ) : candidate.interview_status === "in_progress" ? (
+            <span className="muted small">started</span>
+          ) : candidate.interview_status === "required" ? (
+            <span className="muted small">not sat</span>
+          ) : (
+            <span className="muted small">—</span>
+          )}
+        </td>
+        <td>
           <span className={`chip ${STATUS_CHIP[candidate.status] ?? ""}`}>
             {STATUS_LABEL[candidate.status]}
           </span>
@@ -125,7 +137,7 @@ function CandidateRow({
 
       {act.error && (
         <tr>
-          <td colSpan={7}>
+          <td colSpan={8}>
             <ErrorNote message={act.error} onDismiss={act.clearError} />
           </td>
         </tr>
@@ -133,8 +145,14 @@ function CandidateRow({
 
       {open && (
         <tr>
-          <td colSpan={7}>
+          <td colSpan={8}>
             <div className="detail-panel">
+              {candidate.interview_summary && (
+                <p style={{ whiteSpace: "pre-line" }}>
+                  <strong>Screening interview:</strong>{" "}
+                  {candidate.interview_summary}
+                </p>
+              )}
               {candidate.cover_note && (
                 <p>
                   <strong>Their note:</strong> {candidate.cover_note}
@@ -255,6 +273,7 @@ export default function EmployerCandidates({
                   <th>Contact</th>
                   <th className="num">Exp.</th>
                   <th>Match</th>
+                  <th>Interview</th>
                   <th>Stage</th>
                   <th>Applied</th>
                   <th />
@@ -274,7 +293,10 @@ export default function EmployerCandidates({
           </div>
 
           <p className="muted small" style={{ marginTop: "0.7rem" }}>
-            The match score ranks this list — it never shortens it. Everyone who
+            Two scores, two different questions: <strong>Match</strong> is
+            their profile against your requirements, <strong>Interview</strong>
+            is what they actually wrote. Neither shortens this list or moves
+            anybody — everyone who applied is here whatever they scored. Everyone who
             applied is here whatever they scored, and nothing moves a candidate
             forward or declines them except you choosing a stage. Candidates see
             the stage you set on their own applications page.

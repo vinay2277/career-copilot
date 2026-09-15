@@ -12,6 +12,7 @@ from app.models.coaching import (
     InterviewTurn,
     LearningPath,
     LearningStep,
+    ModuleProgress,
     TailoredResume,
 )
 from app.models.enums import (
@@ -48,6 +49,7 @@ __all__ = [
     "JobRequirement",
     "LearningPath",
     "LearningStep",
+    "ModuleProgress",
     "Necessity",
     "Organization",
     "PostingApplication",

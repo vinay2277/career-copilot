@@ -29,6 +29,7 @@ from app.api.routes import (
     extract,
     interview,
     learning,
+    modules,
     opportunities,
     profile,
     resume,
@@ -167,6 +168,7 @@ for module in (
     interview,
     learning,
     board,
+    modules,
 ):
     app.include_router(module.router, dependencies=STUDENT_ONLY)
 

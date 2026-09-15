@@ -9,7 +9,11 @@ import {
 } from "../components";
 import { useAction, useAsync } from "../hooks";
 
-export default function MyApplications() {
+export default function MyApplications({
+  onInterview,
+}: {
+  onInterview: (applicationId: number) => void;
+}) {
   const applications = useAsync(() => api.myApplications(), []);
   const withdraw = useAction();
 
@@ -61,6 +65,11 @@ export default function MyApplications() {
                     </td>
                     <td>
                       <strong>{posting.title}</strong>
+                      {posting.interview_required && (
+                        <div className="muted small">
+                          this employer asks for a short interview
+                        </div>
+                      )}
                       {application.alignment_detail && (
                         <div className="muted small">
                           {application.alignment_detail.have.length} matched,{" "}
@@ -78,20 +87,30 @@ export default function MyApplications() {
                       {formatDate(application.applied_at)}
                     </td>
                     <td>
-                      {application.status === "applied" && (
-                        <button
-                          className="link"
-                          disabled={withdraw.pending}
-                          onClick={async () => {
-                            const done = await withdraw.run(() =>
-                              api.withdraw(application.id),
-                            );
-                            if (done !== null) applications.reload();
-                          }}
-                        >
-                          withdraw
-                        </button>
-                      )}
+                      <div className="inline">
+                        {posting.interview_required && (
+                          <button
+                            className="primary"
+                            onClick={() => onInterview(application.id)}
+                          >
+                            Interview
+                          </button>
+                        )}
+                        {application.status === "applied" && (
+                          <button
+                            className="link"
+                            disabled={withdraw.pending}
+                            onClick={async () => {
+                              const done = await withdraw.run(() =>
+                                api.withdraw(application.id),
+                              );
+                              if (done !== null) applications.reload();
+                            }}
+                          >
+                            withdraw
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -63,6 +63,10 @@ class PostingDraftIn(BaseModel):
     certifications: list[str] = Field(default_factory=list)
     total_years_experience: float | None = Field(default=None, ge=0, le=60)
     closes_at: datetime | None = None
+    #: Ask applicants a short AI-run screening round. Off by default: every
+    #: interview spends model credit, so switching it on is a cost decision.
+    interview_required: bool = False
+    interview_question_count: int = Field(default=4, ge=2, le=8)
     requirements: list[PostingRequirementIn] = Field(default_factory=list)
     #: The text the requirements were read from, kept for re-extraction and for
     #: generating interview questions later.
@@ -130,6 +134,8 @@ class PostingOut(BaseModel):
     total_years_experience: float | None
     source_url: str | None
     requirements: list[PostingRequirementOut]
+    interview_required: bool
+    interview_question_count: int
     closes_at: datetime | None
     created_at: datetime
 
@@ -232,6 +238,15 @@ class CandidateOut(BaseModel):
     #: Everything the candidate claims, not only what this role asked for.
     skills: list[str]
 
+    # --- Screening interview ---
+    # Null all the way down when the role asks for no interview, or the
+    # candidate has not sat it yet. A score here is a second, independent
+    # signal beside the alignment score — it does not replace it, and neither
+    # of them moves the candidate anywhere by itself.
+    interview_status: str | None = None
+    interview_score: float | None = None
+    interview_summary: str | None = None
+
 
 class CandidateListOut(BaseModel):
     """The applicants to one posting, best-scoring first."""
@@ -302,3 +317,42 @@ class CandidateSearchOut(BaseModel):
     #: How many opted-in profiles exist at all, so an empty result can say
     #: whether the search was too narrow or nobody has opted in yet.
     searchable_total: int
+
+
+# --------------------------------------------------------------------------- #
+# Screening interviews
+# --------------------------------------------------------------------------- #
+
+
+class ScreeningTurnOut(BaseModel):
+    position: int
+    question: str
+    answer: str | None
+    score: float | None
+    #: Held back from the candidate until the round is submitted — see
+    #: `ScreeningOut.include_feedback`.
+    feedback: str | None
+    probes_skill: str | None
+
+
+class ScreeningOut(BaseModel):
+    """One screening round, as either side sees it."""
+
+    id: int
+    application_id: int | None
+    posting_title: str
+    overall_score: float | None
+    summary: str | None
+    completed_at: datetime | None
+    turns: list[ScreeningTurnOut]
+
+
+class ScreeningSubmitIn(BaseModel):
+    """Every answer at once.
+
+    The whole round is submitted together because it is graded together — the
+    model needs to see the answers as a set to say anything useful about the
+    round, and grading turn by turn would cost several times as much.
+    """
+
+    answers: dict[int, str] = Field(description="Question position -> answer text.")

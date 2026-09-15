@@ -98,6 +98,15 @@ class JobPosting(Base):
     source_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     extraction_confidence: Mapped[float] = mapped_column(Float, default=1.0)
 
+    # --- Screening interview ---
+    # Off by default. Every interview costs two model calls, so turning this on
+    # for a role that will draw hundreds of applicants is a spending decision
+    # the recruiter should make deliberately rather than inherit.
+    interview_required: Mapped[bool] = mapped_column(default=False)
+    #: Capped low on purpose — see `MAX_INTERVIEW_QUESTIONS`. Five good
+    #: questions tell you more than twelve that nobody finishes.
+    interview_question_count: Mapped[int] = mapped_column(Integer, default=4)
+
     opens_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     #: After this the posting stops accepting applications. A board that
     #: silently fills with filled roles is worse than an empty one.

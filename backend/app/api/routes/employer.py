@@ -29,6 +29,7 @@ from app.db.session import get_db
 from app.models import (
     Account,
     ApplicationStatus,
+    InterviewSession,
     JobPosting,
     Organization,
     PostingApplication,
@@ -165,6 +166,8 @@ def _apply_draft(posting: JobPosting, payload: PostingDraftIn) -> None:
     posting.certifications = payload.certifications
     posting.total_years_experience = payload.total_years_experience
     posting.closes_at = payload.closes_at
+    posting.interview_required = payload.interview_required
+    posting.interview_question_count = payload.interview_question_count
     if payload.raw_text:
         posting.raw_text = payload.raw_text
 
@@ -445,6 +448,20 @@ def _candidates(db: Session, posting: JobPosting) -> list[CandidateOut]:
         ).all()
     )
 
+    # One query for every screening round on this posting, rather than one per
+    # candidate. Keyed by application so a candidate who has not sat theirs
+    # simply has no entry.
+    interviews = {
+        s.application_id: s
+        for s in db.execute(
+            select(InterviewSession).where(
+                InterviewSession.application_id.in_(
+                    [application.id for application, _, _ in rows]
+                )
+            )
+        ).scalars()
+    }
+
     # A None score sorts last rather than crashing the comparison: applying with
     # an empty profile is allowed, and those rows still have to render.
     rows.sort(
@@ -458,6 +475,14 @@ def _candidates(db: Session, posting: JobPosting) -> list[CandidateOut]:
     out: list[CandidateOut] = []
     for application, profile, account in rows:
         detail = application.alignment_detail or {}
+        interview = interviews.get(application.id)
+        if interview is None:
+            interview_status = "required" if posting.interview_required else None
+        elif interview.completed_at is None:
+            interview_status = "in_progress"
+        else:
+            interview_status = "completed"
+
         out.append(
             CandidateOut(
                 application_id=application.id,
@@ -475,6 +500,9 @@ def _candidates(db: Session, posting: JobPosting) -> list[CandidateOut]:
                 partial=list(detail.get("partial", [])),
                 missing=list(detail.get("missing", [])),
                 skills=sorted(s.name for s in profile.skills),
+                interview_status=interview_status,
+                interview_score=interview.overall_score if interview else None,
+                interview_summary=interview.summary if interview else None,
             )
         )
     return out
@@ -584,6 +612,8 @@ CSV_COLUMNS = [
     "location",
     "years_experience",
     "alignment_score",
+    "interview_score",
+    "interview_status",
     "stage",
     "applied_at",
     "requirements_met",
@@ -631,6 +661,8 @@ def export_candidates(
                 c.location or "",
                 f"{c.years_experience:g}",
                 "" if c.alignment_score is None else f"{c.alignment_score:.1f}",
+                "" if c.interview_score is None else f"{c.interview_score:.1f}",
+                c.interview_status or "",
                 STAGE_LABELS.get(c.status, c.status.value),
                 c.applied_at.isoformat(timespec="seconds"),
                 "; ".join(c.have),

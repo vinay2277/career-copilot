@@ -17,6 +17,7 @@ import Analytics from "./pages/Analytics";
 import EmployerCandidates from "./pages/EmployerCandidates";
 import FindCandidates from "./pages/FindCandidates";
 import EmployerPostings from "./pages/EmployerPostings";
+import GenAiCourse from "./pages/GenAiCourse";
 import JobBoard from "./pages/JobBoard";
 import MyApplications from "./pages/MyApplications";
 import PostJob from "./pages/PostJob";
@@ -24,6 +25,7 @@ import InterviewPrep from "./pages/InterviewPrep";
 import LearningRoadmap from "./pages/LearningRoadmap";
 import Opportunities from "./pages/Opportunities";
 import ProfilePage from "./pages/Profile";
+import ScreeningInterview from "./pages/ScreeningInterview";
 import SkillRoi from "./pages/SkillRoi";
 
 /** Grouped to match the user's actual sequence: set up, add, work, then reflect. */
@@ -58,6 +60,10 @@ const NAV = [
       { to: "/learning", label: "Learning roadmap" },
     ],
   },
+  {
+    group: "Learn",
+    links: [{ to: "/course", label: "Gen AI course" }],
+  },
 ];
 
 /** Who you're signed in as, and the way out. */
@@ -91,6 +97,14 @@ function AccountBar({
       </button>
     </div>
   );
+}
+
+/** Reads the application id out of the URL, like CandidatesRoute does. */
+function InterviewRoute({ onBack }: { onBack: () => void }) {
+  const { applicationId } = useParams();
+  const id = Number(applicationId);
+  if (!Number.isInteger(id)) return <Navigate to="/applications" replace />;
+  return <ScreeningInterview applicationId={id} onBack={onBack} />;
 }
 
 /** Reads the posting id out of the URL so the page itself stays a pure view. */
@@ -327,7 +341,18 @@ export default function App() {
           <Route path="/" element={<Navigate to="/jobs" replace />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/jobs" element={<JobBoard />} />
-          <Route path="/applications" element={<MyApplications />} />
+          <Route
+            path="/applications"
+            element={
+              <MyApplications
+                onInterview={(id) => navigate(`/applications/${id}/interview`)}
+              />
+            }
+          />
+          <Route
+            path="/applications/:applicationId/interview"
+            element={<InterviewRoute onBack={() => navigate("/applications")} />}
+          />
           <Route path="/add" element={<AddJob />} />
           <Route path="/opportunities" element={<Opportunities />} />
           <Route path="/opportunities/:jobId" element={<Opportunities />} />
@@ -336,6 +361,7 @@ export default function App() {
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/interview" element={<InterviewPrep />} />
           <Route path="/learning" element={<LearningRoadmap />} />
+          <Route path="/course" element={<GenAiCourse />} />
           <Route
             path="*"
             element={

@@ -971,3 +971,148 @@ ul.clean li {
 .button-link:hover {
   filter: brightness(1.08);
 }
+
+/* --- Screening interviews --- */
+
+/* One question and its answer box. Separated by a rule rather than a card
+   each, so a round of six reads as one document instead of six objects. */
+.interview-turn {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.interview-turn:last-of-type {
+  border-bottom: none;
+}
+
+.interview-turn textarea {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+/* The recruiter's cost decision, set apart from the publish buttons so it is
+   read rather than clicked past. */
+.screening-toggle {
+  margin-top: 1.2rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+}
+
+.screening-toggle p {
+  margin-bottom: 0;
+}
+
+/* --- The Gen AI course --- */
+
+.progress-track {
+  height: 8px;
+  margin-top: 0.6rem;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-top: 1.2rem;
+}
+
+.module-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.module-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.module-card p {
+  margin: 0;
+  flex: 1;
+}
+
+/* A locked module is dimmed but still readable: the title and summary are what
+   tell a student where the course is going, so hiding them would make the
+   sequence feel arbitrary rather than deliberate. */
+.module-card.is-locked {
+  opacity: 0.55;
+}
+
+.module-card.is-passed {
+  border-color: var(--accent);
+}
+
+.module-number {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.module-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+}
+
+.question {
+  margin: 0 0 1.2rem;
+  padding: 0;
+  border: none;
+}
+
+.question legend {
+  padding: 0;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.option {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  margin: 0 0 0.35rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.option input {
+  margin-top: 0.2rem;
+}
+
+/* Marked after grading. Colour is not the only signal — the explanation under
+   the question says which was right in words. */
+.option.is-right {
+  border-color: var(--strong, var(--accent));
+  background: var(--surface-alt);
+  font-weight: 600;
+}
+
+.option.is-wrong {
+  border-color: var(--weak, #b4462f);
+  text-decoration: line-through;
+}

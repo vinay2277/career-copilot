@@ -7,6 +7,10 @@ import type {
   CandidateSearchQuery,
   CandidateSearchResult,
   ProfilePayload,
+  ModuleAttempt,
+  ModuleDetail,
+  ModuleRow,
+  Screening,
   BoardEntry,
   ExtractionPreview,
   MyApplication,
@@ -157,6 +161,17 @@ export const api = {
       cover_note: cover_note || null,
     }),
   myApplications: () => request<MyApplication[]>("/api/board/applications"),
+
+  // --- Screening interview ---
+  startInterview: (applicationId: number) =>
+    post<Screening>(`/api/board/applications/${applicationId}/interview`),
+  readInterview: (applicationId: number) =>
+    request<Screening>(`/api/board/applications/${applicationId}/interview`),
+  submitInterview: (applicationId: number, answers: Record<number, string>) =>
+    post<Screening>(
+      `/api/board/applications/${applicationId}/interview/submit`,
+      { answers },
+    ),
   withdraw: (applicationId: number) =>
     request<void>(`/api/board/applications/${applicationId}`, {
       method: "DELETE",
@@ -279,6 +294,12 @@ export const api = {
   submitAnswer: (sessionId: number, position: number, answer: string) =>
     post<InterviewTurn>(`/api/interview/${sessionId}/turns/${position}/answer`, { answer }),
   completeSession: (id: number) => post<InterviewSession>(`/api/interview/${id}/complete`),
+
+  // --- The Gen AI course ---
+  modules: () => request<ModuleRow[]>("/api/modules"),
+  module: (slug: string) => request<ModuleDetail>(`/api/modules/${slug}`),
+  attemptModule: (slug: string, answers: Record<number, number>) =>
+    post<ModuleAttempt>(`/api/modules/${slug}/attempt`, { answers }),
 
   // --- Learning ---
   listPaths: () => request<LearningPath[]>("/api/learning"),
