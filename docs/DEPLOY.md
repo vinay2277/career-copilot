@@ -188,6 +188,32 @@ One assumption comes with it: **a single instance**. Two processes migrating
 concurrently can deadlock or double-apply. If you scale out, move this to a
 pre-deploy command that runs once.
 
+**Migrations wait, but not forever.** On Postgres the migration connection sets
+`lock_timeout` to 20 seconds. Adding a column or a foreign key needs a lock on
+the table, and during a deploy the *previous* instance is still serving and
+still holding connections — any one of them in an open transaction makes the
+new instance's migration wait. Without a bound, it waits indefinitely: the log
+stops mid-migration, the health check times out, and nothing anywhere says why.
+With one, you get a stack trace naming the lock.
+
+**Only the schema blocks startup.** The bootstrap account runs after the app is
+already answering. It hashes a password with Argon2 — deliberately slow, slower
+on a small instance — and a recovery path must never be able to stop the
+application booting. It appears in the log a moment after `serving`.
+
+**Startup logs its phases.** Each one says when it began and how long it took:
+
+```
+Startup: schema…
+Startup: schema done in 1.4s
+Startup: configuration check done in 0.0s
+Startup finished in 1.4s — serving.
+Startup: account bootstrap done in 0.6s
+```
+
+If a deploy ever stalls again, the last line tells you which step. A silent gap
+between two log lines is a diagnosis nobody can make.
+
 ## What has actually been verified
 
 Tested on this machine:

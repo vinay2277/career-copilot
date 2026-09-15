@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -94,11 +96,46 @@ def _bootstrap_schema() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Provision the schema on a first run so a fresh clone just works."""
-    _bootstrap_schema()
-    startup_check()
-    _bootstrap_account()
+    """Bring the schema up to date, then start serving.
+
+    Every phase announces itself and reports how long it took. That is not
+    decoration: a deploy once died here with the log ending mid-phase and no
+    error, and there was no way to tell from the outside which step had stalled
+    — migrations, the configuration check, or the account bootstrap. A silent
+    gap between two log lines is a diagnosis nobody can make.
+
+    Only the schema blocks startup. Everything optional runs after the app is
+    answering, because a slow recovery path must not be able to stop the
+    application booting.
+    """
+    started = time.monotonic()
+
+    _phase("schema", _bootstrap_schema)
+    _phase("configuration check", startup_check)
+
+    logger.info("Startup finished in %.1fs — serving.", time.monotonic() - started)
+
+    # Deliberately not awaited and deliberately not blocking. The bootstrap
+    # account is a way back in when you are locked out, not something the app
+    # needs in order to serve a page — and it hashes a password with Argon2,
+    # which is slow by design and slower again on a small instance.
+    bootstrap = asyncio.create_task(asyncio.to_thread(_phase, "account bootstrap", _bootstrap_account))
+
     yield
+
+    bootstrap.cancel()
+
+
+def _phase(name: str, step) -> None:
+    """Run one startup phase, saying when it began and how long it took."""
+    logger.info("Startup: %s…", name)
+    began = time.monotonic()
+    try:
+        step()
+    except Exception:
+        logger.exception("Startup: %s FAILED after %.1fs", name, time.monotonic() - began)
+        raise
+    logger.info("Startup: %s done in %.1fs", name, time.monotonic() - began)
 
 
 def _bootstrap_account() -> None:

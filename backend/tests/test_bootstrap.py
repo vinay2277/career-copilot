@@ -193,3 +193,84 @@ def test_a_password_that_fails_validation_creates_nothing(db, monkeypatch):
 
     bootstrap_from_env(db)
     assert db.execute(select(Account)).scalars().all() == []
+
+
+# --------------------------------------------------------------------------- #
+# Startup must not be hostage to an optional step
+# --------------------------------------------------------------------------- #
+
+
+def test_a_slow_bootstrap_does_not_delay_serving(monkeypatch, db_session):
+    """The regression this guards is a real one.
+
+    A deploy hung during startup with the log ending mid-phase and no error.
+    Whatever stalled, the lesson stands: the account bootstrap hashes a
+    password with Argon2 — slow by design, slower on a small instance — and it
+    is a way back in when you are locked out, not something the app needs in
+    order to answer a request. If it can block the health check, a platform
+    will kill the deploy over it.
+    """
+    import time as _time
+
+    from fastapi.testclient import TestClient
+
+    from app.db.session import get_db
+    from app.main import app
+    from app.services import accounts
+
+    entered = []
+
+    def glacial(db):
+        _time.sleep(5)
+        entered.append("finished")
+
+    monkeypatch.setattr(accounts, "bootstrap_from_env", glacial)
+
+    def override():
+        db = db_session()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override
+    began = _time.monotonic()
+    try:
+        with TestClient(app) as client:
+            startup = _time.monotonic() - began
+            assert startup < 4, (
+                f"startup waited {startup:.1f}s on an optional step; the "
+                "bootstrap must not gate serving"
+            )
+            assert client.get("/health").status_code == 200
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_a_failing_bootstrap_does_not_stop_the_app(monkeypatch, db_session):
+    """An unusable recovery path is worse than no recovery path only if it
+    also takes the application down with it."""
+    from fastapi.testclient import TestClient
+
+    from app.db.session import get_db
+    from app.main import app
+    from app.services import accounts
+
+    def explode(db):
+        raise RuntimeError("no database for you")
+
+    monkeypatch.setattr(accounts, "bootstrap_from_env", explode)
+
+    def override():
+        db = db_session()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override
+    try:
+        with TestClient(app) as client:
+            assert client.get("/health").status_code == 200
+    finally:
+        app.dependency_overrides.clear()

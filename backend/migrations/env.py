@@ -67,6 +67,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        _bound_the_wait(connection)
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
@@ -75,6 +76,33 @@ def run_migrations_online() -> None:
         )
         with context.begin_transaction():
             context.run_migrations()
+
+
+def _bound_the_wait(connection) -> None:
+    """Make a blocked migration fail loudly instead of hanging forever.
+
+    Adding a column or a foreign key needs a lock on the table. During a deploy
+    the previous instance is still serving, still holding connections, and any
+    one of them in an open transaction will make the new instance's migration
+    wait — by default, indefinitely.
+
+    That is what an unbounded wait looks like from the outside: migrations
+    start, the log goes quiet, the health check times out, and there is no
+    error anywhere saying why. A bounded wait turns the same situation into a
+    stack trace naming the lock, which is a problem somebody can act on.
+
+    Postgres only; SQLite has no such settings and no such contention.
+    """
+    if not settings.database_url.startswith("postgresql"):
+        return
+
+    from sqlalchemy import text
+
+    # Long enough to ride out a request finishing, short enough that the
+    # platform's health check has not given up by the time it fails.
+    connection.execute(text("SET lock_timeout = '20s'"))
+    connection.execute(text("SET statement_timeout = '120s'"))
+    connection.commit()
 
 
 if context.is_offline_mode():
