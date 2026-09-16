@@ -43,8 +43,9 @@ export default function FindCandidates() {
       <div className="page-head">
         <h1>Find candidates</h1>
         <p>
-          Search students who have chosen to be found. Scored against the skills
-          you name, using the same engine that scores applicants to your roles.
+          Search students who have chosen to be found. Only people who have
+          at least one of the skills you name, ranked by fit and then by depth
+          in those skills, best first.
         </p>
       </div>
 
@@ -132,8 +133,8 @@ export default function FindCandidates() {
                 <p>
                   {result.searchable_total} student
                   {result.searchable_total === 1 ? " is" : "s are"} searchable,
-                  but none matched these filters. Try fewer skills or drop the
-                  location.
+                  but none of them has any of the skills you named. Check the
+                  spelling, or try a broader skill.
                 </p>
               )}
             </Empty>
@@ -230,9 +231,10 @@ export default function FindCandidates() {
               </div>
 
               <p className="muted small" style={{ marginTop: "0.7rem" }}>
-                Everyone listed chose to be findable and can switch that off at
-                any time. The score ranks the results; it never removes anyone
-                who matched your filters.
+                Everyone listed chose to be findable, has at least one of the
+                skills you named, and can switch that off at any time. Ranked by
+                fit, then by years in the skills you searched — not by how long
+                their career has been.
               </p>
             </Card>
           )}

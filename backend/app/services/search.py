@@ -6,8 +6,10 @@ one set of requirements the recruiter typed. Same function, same weights, same
 partial-credit rules — so a candidate who reads as a 78 on a posting reads as a
 78 here, and nobody has to reconcile two different numbers for the same fit.
 
-**One hard rule governs this whole module: a profile is searchable only if its
-owner switched `visible_to_recruiters` on.** It is off by default and nothing
+Two rules, and they are easy to confuse with the applicant list's.
+
+**A profile is searchable only if its owner switched `visible_to_recruiters`
+on.** It is off by default and nothing
 turns it on implicitly — not uploading a résumé, not applying to a role, not
 filling in a profile. Applying to a posting makes that one recruiter able to
 see you for that one role; it is not consent to be found by every recruiter on
@@ -22,7 +24,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Preferences, Profile
+from app.models import Preferences, Profile, ProfileSkill
 from app.models.enums import Necessity
 from app.services.analytics.alignment import (
     RequirementInput,
@@ -31,6 +33,7 @@ from app.services.analytics.alignment import (
     score_requirements,
 )
 from app.services.analytics.canonical import canonicalize
+from app.services.scoring import load_aliases
 
 
 @dataclass(frozen=True)
@@ -112,12 +115,33 @@ def _matches_location(profile: Profile, wanted: str) -> bool:
     return False
 
 
-def search_candidates(db: Session, query: CandidateQuery) -> list[CandidateMatch]:
-    """Rank the opted-in candidates against a recruiter's search.
+def _search_terms(db: Session, canonical: set[str]) -> set[str]:
+    """Every spelling a matching profile skill could be stored under.
 
-    Ranked and capped, never cut off by score. Everyone who passes the stated
-    filters appears in score order — the number sorts the list, it does not
-    decide who is in it.
+    Profile skills are canonicalised on save, but the alias table can change
+    afterwards, so a row saved last year may hold what is now an alias. Pull in
+    every alias pointing at a wanted skill, or the SQL filter below would drop
+    people who genuinely have it.
+    """
+    aliases = load_aliases(db)
+    return canonical | {a for a, target in aliases.items() if target in canonical}
+
+
+def search_candidates(db: Session, query: CandidateQuery) -> list[CandidateMatch]:
+    """Rank the opted-in candidates who actually have the skills asked for.
+
+    **Candidates who match none of the named skills are excluded**, and that is
+    not the same decision as the one made on an applicant list. There, a
+    low-scoring candidate stays because they chose to apply and dropping them
+    on a number would be an automated rejection. Here, nobody is rejected:
+    somebody with none of the skills a recruiter typed was never a candidate
+    for this search, and returning them is not fairness, it is a search that
+    does not work. Searching "airflow" and being handed people who have never
+    touched it makes the whole feature useless at any real size.
+
+    The filter runs in SQL against the indexed skill name, so a search on a
+    table of ten thousand profiles loads the handful who match rather than all
+    ten thousand.
     """
     stmt = (
         select(Profile)
@@ -128,6 +152,15 @@ def search_candidates(db: Session, query: CandidateQuery) -> list[CandidateMatch
         stmt = stmt.where(Profile.open_to_work.is_(True))
     if query.min_years is not None:
         stmt = stmt.where(Profile.years_experience >= query.min_years)
+
+    requirements = _requirements(query.skills)
+    if requirements:
+        wanted = _search_terms(db, {r.name for r in requirements})
+        stmt = stmt.where(
+            Profile.id.in_(
+                select(ProfileSkill.profile_id).where(ProfileSkill.name.in_(wanted))
+            )
+        )
 
     profiles = list(db.execute(stmt).scalars())
 
@@ -142,8 +175,6 @@ def search_candidates(db: Session, query: CandidateQuery) -> list[CandidateMatch
             p for p in profiles if p.preferences is None or p.preferences.remote_ok
         ]
 
-    requirements = _requirements(query.skills)
-
     matches: list[CandidateMatch] = []
     for profile in profiles:
         if not requirements:
@@ -157,26 +188,45 @@ def search_candidates(db: Session, query: CandidateQuery) -> list[CandidateMatch
                 for s in profile.skills
             ],
         )
-        matches.append(
-            CandidateMatch(profile=profile, score=round(fit, 1), requirements=results)
+        match = CandidateMatch(
+            profile=profile, score=round(fit, 1), requirements=results
         )
+        # The SQL filter admits anyone holding one wanted skill; this drops the
+        # ones the scorer then found no credit for at all — a skill claimed at
+        # a level or a depth the search asked past.
+        if not match.have and not match.partial:
+            continue
+        matches.append(match)
 
-    # Score first, then experience, then name.
+    # Score first, then depth in the skills actually asked for, then name.
     #
-    # The experience tie-break earns its place: one requirement is either met
-    # or not, so searching a single skill scores an expert of six years and a
-    # two-year working knowledge identically at 100. Both genuinely cover it —
-    # the score is right — but handing the recruiter the shallower candidate
-    # first because their name sorts earlier is not a ranking, it is an
-    # accident. Breaking the tie on depth changes the order, never the number.
+    # The depth tie-break earns its place: a requirement is either met or not,
+    # so searching one skill scores a six-year expert and a two-year working
+    # knowledge identically at 100. Both genuinely cover it — the score is
+    # right — but handing the recruiter the shallower one first because their
+    # name sorts earlier is not a ranking, it is an accident.
     #
-    # An unscored search has only experience to go on, so the same key covers
-    # it with `None` scoring below every real score.
+    # It counts years in the *searched* skills, not total career length. A
+    # fifteen-year manager who touched Airflow once should not outrank a
+    # four-year engineer who has run it in production, and ranking on the
+    # profile-wide figure would put them on top.
     matches.sort(
         key=lambda m: (
             -(m.score if m.score is not None else 0.0),
-            -m.profile.years_experience,
+            -_depth_in(m),
             m.profile.full_name.lower(),
         )
     )
     return matches[: query.limit]
+
+
+def _depth_in(match: CandidateMatch) -> float:
+    """Years the candidate claims in the skills this search named.
+
+    Falls back to total experience when the search named no skills, which is
+    the only ordering an unscored search has to go on.
+    """
+    wanted = set(match.have) | set(match.partial)
+    if not wanted:
+        return match.profile.years_experience
+    return sum(s.years for s in match.profile.skills if s.name in wanted)

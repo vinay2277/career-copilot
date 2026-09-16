@@ -260,3 +260,131 @@ def test_an_unverified_organization_cannot_search(api):
 
 def test_signed_out_cannot_search(client):
     assert client.post(SEARCH, json={"skills": ["python"]}).status_code == 401
+
+
+# --------------------------------------------------------------------------- #
+# Only people who actually have the skills
+# --------------------------------------------------------------------------- #
+
+
+def test_a_candidate_with_none_of_the_skills_is_not_returned(api, db_session):
+    """The rule that does NOT carry over from the applicant list.
+
+    There, a low scorer stays because they chose to apply and removing them on
+    a number would be an automated rejection. Here nobody is rejected —
+    somebody with none of the named skills was never a candidate for this
+    search, and returning them makes the feature useless at any real size.
+    """
+    register_hr(api)
+    verify_organization(db_session)
+    make_student(
+        api,
+        "designer@example.com",
+        "Not A Coder",
+        [("figma", "expert", 8), ("illustrator", "expert", 6)],
+        visible=True,
+    )
+    sign_in_recruiter(api)
+
+    body = search(api, skills=["python"])
+    assert body["results"] == []
+    assert body["searchable_total"] == 1, "they are searchable, just not a match"
+
+
+def test_a_nonsense_search_returns_nobody(recruiter_with_candidates):
+    """Typing a skill nobody has should say so, not list everyone at zero."""
+    body = search(recruiter_with_candidates, skills=["rani"])
+    assert body["results"] == []
+
+
+def test_one_matching_skill_out_of_several_still_counts(recruiter_with_candidates):
+    """Partial matches are the normal case and must not be filtered away."""
+    body = search(recruiter_with_candidates, skills=["python", "rust", "haskell"])
+
+    names = [r["full_name"] for r in body["results"]]
+    assert "Deep Python" in names
+    assert all("rust" in r["missing"] for r in body["results"])
+
+
+def test_ranking_uses_depth_in_the_searched_skill(api, db_session):
+    """A long career elsewhere must not outrank real depth in what was asked.
+
+    The generalist has three times the total experience, and one year of the
+    skill searched. They should rank second.
+    """
+    register_hr(api)
+    verify_organization(db_session)
+    make_student(
+        api,
+        "generalist@example.com",
+        "Broad Career",
+        [("python", "working", 1), ("excel", "expert", 14)],
+        visible=True,
+        years=15,
+    )
+    make_student(
+        api,
+        "focused@example.com",
+        "Deep Practitioner",
+        [("python", "working", 5)],
+        visible=True,
+        years=5,
+    )
+    sign_in_recruiter(api)
+
+    names = [r["full_name"] for r in search(api, skills=["python"])["results"]]
+    assert names == ["Deep Practitioner", "Broad Career"]
+
+
+def test_the_result_count_is_capped(api, db_session):
+    """Ten thousand candidates must not arrive in one response."""
+    register_hr(api)
+    verify_organization(db_session)
+    for i in range(8):
+        make_student(
+            api,
+            f"dev{i}@example.com",
+            f"Dev {i}",
+            [("python", "working", i + 1)],
+            visible=True,
+        )
+    sign_in_recruiter(api)
+
+    body = search(api, skills=["python"], limit=3)
+    assert len(body["results"]) == 3
+    assert body["searchable_total"] == 8, "the total still reports everyone opted in"
+    # Deepest first, so a cap keeps the best rather than an arbitrary three.
+    assert [r["full_name"] for r in body["results"]] == ["Dev 7", "Dev 6", "Dev 5"]
+
+
+def test_an_empty_search_still_lists_everyone(recruiter_with_candidates):
+    """Naming no skill is a different question and keeps its old answer."""
+    body = search(recruiter_with_candidates)
+    assert len(body["results"]) == 3
+
+
+def test_the_applicant_list_still_keeps_weak_candidates(api, db_session):
+    """The rule this change must not have leaked into.
+
+    An applicant who scores badly stays on the recruiter's list. Only search
+    filters, and only because nobody there chose to be considered.
+    """
+    from tests.test_postings import DRAFT
+
+    register_hr(api)
+    verify_organization(db_session)
+    posting_id = api.post(
+        "/api/employer/postings", json={**DRAFT, "interview_required": False}
+    ).json()["id"]
+    api.post(f"/api/employer/postings/{posting_id}/publish")
+
+    make_student(api, "weak@example.com", "Weak Match", [("figma", "expert", 5)], visible=False)
+    assert api.post(f"/api/board/postings/{posting_id}/apply", json={}).status_code == 201
+
+    sign_in_recruiter(api)
+    candidates = api.get(
+        f"/api/employer/postings/{posting_id}/applications"
+    ).json()["candidates"]
+
+    assert [c["full_name"] for c in candidates] == ["Weak Match"]
+    assert candidates[0]["alignment_score"] < 50
