@@ -71,6 +71,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     window.dispatchEvent(new CustomEvent("career-copilot:unauthenticated"));
   }
 
+  // A 403 may mean the signed-in account is no longer the one this tab is
+  // rendering for. Sessions live in a cookie, and a cookie is shared by every
+  // tab on the site — so signing in as a student in one tab silently replaces
+  // the recruiter session in another, which carries on showing the recruiter's
+  // screens until something fails. Ask who is actually signed in.
+  //
+  // Harmless when the 403 is a genuine one (an unverified organization, say):
+  // the session comes back unchanged and nothing happens.
+  if (response.status === 403) {
+    window.dispatchEvent(new CustomEvent("career-copilot:forbidden"));
+  }
+
   if (!response.ok) {
     // FastAPI returns {detail: "..."} for HTTPException and {detail: [...]} for
     // validation errors. Both are surfaced rather than replaced with a generic

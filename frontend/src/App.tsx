@@ -282,6 +282,37 @@ export default function App() {
       );
   }, []);
 
+  // A 403 might mean somebody signed in as a different account in another tab.
+  // Re-read the session; if the account changed, swap to its shell and go to
+  // that role's home, because the route we are on may not exist for them.
+  useEffect(() => {
+    const onForbidden = async () => {
+      try {
+        const session = await api.session();
+        const next = session.account;
+        if (!session.authenticated || !next) {
+          setAccount(null);
+          setState("signed-out");
+          return;
+        }
+        setAccount((current) => {
+          if (current && current.id === next.id && current.role === next.role) {
+            return current;
+          }
+          navigate("/", { replace: true });
+          return next;
+        });
+      } catch {
+        // Leave the page as it is. A failed re-check is not evidence that the
+        // session changed, and logging somebody out on a flaky request would
+        // be worse than the stale shell we are trying to fix.
+      }
+    };
+    window.addEventListener("career-copilot:forbidden", onForbidden);
+    return () =>
+      window.removeEventListener("career-copilot:forbidden", onForbidden);
+  }, [navigate]);
+
   if (state === "checking") return <div className="login-screen" />;
 
   if (state === "signed-out" || !account) {
